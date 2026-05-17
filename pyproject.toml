@@ -1,0 +1,32 @@
+[project]
+name = "ok-ww-automator"
+version = "0.1.0"
+description = "CLI automation helpers for Wuthering Waves daily routines"
+readme = "README.md"
+requires-python = "~=3.12.0"
+dependencies = []
+
+[project.optional-dependencies]
+sheets = [
+    "google-auth>=2.0",
+    "gspread>=6.0",
+]
+waves = [
+    "requests>=2.0",
+]
+notice = [
+    "requests>=2.0",
+]
+
+[project.scripts]
+ok-ww-automator-ok = "ok_ww_automator.ok_main:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ok_ww_automator = ["notice_templates/*.html"]
