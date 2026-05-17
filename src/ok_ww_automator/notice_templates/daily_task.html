@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    :root {
+      --bg: #f3f4f6;
+      --card: #ffffff;
+      --muted: #6b7280;
+      --text: #111827;
+      --border: #e5e7eb;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI","Helvetica Neue",Arial,sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    .container {
+      max-width: 820px;
+      margin: 12px auto;
+      padding: 14px 16px 16px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: 0 10px 25px rgba(15,23,42,0.08);
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 4px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.3;
+      letter-spacing: 0.01em;
+      font-weight: 600;
+    }
+    .status {
+      color: {{status_color}};
+    }
+
+    /* Cards & metrics */
+    .card {
+      margin-top: 10px;
+      padding: 11px 11px 12px;
+      border-radius: 12px;
+      background: #f9fafb;
+      border: 1px solid var(--border);
+    }
+    .section-title {
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 10px;
+      color: var(--muted);
+      margin-bottom: 7px;
+    }
+    .metric-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 6px 6px;
+    }
+    .metric-cell {
+      padding: 8px 9px;
+      border-radius: 9px;
+      border: 1px solid var(--border);
+      background: #ffffff;
+      vertical-align: top;
+    }
+    .label {
+      display: block;
+      margin-bottom: 3px;
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.02em;
+    }
+    .value {
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+    .muted {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    /* Mobile layout */
+    @media (max-width: 600px) {
+      .container {
+        margin: 10px;
+        padding: 12px 10px 14px;
+      }
+      .metric-table {
+        border-spacing: 0 5px;
+      }
+      .metric-table tr {
+        display: block;
+      }
+      .metric-table td {
+        display: block;
+        width: 100% !important;
+        box-sizing: border-box;
+        margin-top: 5px;
+      }
+      .metric-cell {
+        padding: 7px 8px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header: run mode only appears in {{title}} -->
+    <div class="header">
+      <h1 class="status" style="color: {{status_color}};">{{title}}</h1>
+    </div>
+
+    <!-- 执行概览 -->
+    <div class="card">
+      <div class="section-title" style="color: #6b7280;">执行概览</div>
+      <table class="metric-table" role="presentation">
+        <tr>
+          <td class="metric-cell">
+            <span class="label">开始时间</span>
+            <span class="value">{{started_at}}</span>
+          </td>
+          <td class="metric-cell">
+            <span class="label">结束时间</span>
+            <span class="value">{{ended_at}}</span>
+          </td>
+          <td class="metric-cell">
+            <span class="label">持续时长</span>
+            <span class="value">{{duration}}</span>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- 体力 -->
+    <div class="card">
+      <div class="section-title" style="color: #6b7280;">体力</div>
+      <table class="metric-table" role="presentation">
+        <tr>
+          <td class="metric-cell">
+            <span class="label">开始</span>
+            <span class="value">结晶波片：{{stamina_start}}</span><br>
+            <span class="value">结晶单质：{{backup_start}}</span>
+          </td>
+          <td class="metric-cell">
+            <span class="label">结束</span>
+            <span class="value">结晶波片：{{stamina_left}}</span><br>
+            <span class="value">结晶单质：{{backup_stamina}}</span>
+          </td>
+          <td class="metric-cell">
+            <span class="label">预计下次日常</span>
+            <span class="value">结晶波片：{{next_daily_stamina}}</span><br>
+            <span class="value">结晶单质：{{next_daily_backup_stamina}}</span>
+          </td>
+        </tr>
+        <tr>
+          <td class="metric-cell" colspan="3">
+            <span class="label">体力消耗</span>
+            <span class="value">{{stamina_used}}</span>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- 日常 -->
+    <div class="card">
+      <div class="section-title" style="color: #6b7280;">日常</div>
+      <table class="metric-table" role="presentation">
+        <tr>
+          <td class="metric-cell">
+            <span class="label">日常积分</span>
+            <span class="value">{{daily_points}}</span>
+          </td>
+          <td class="metric-cell">
+            <span class="label">是否完成</span>
+            <span class="value">{{daily_complete_label}}</span>
+          </td>
+          <td class="metric-cell">
+            <span class="label">库街区签到</span>
+            <span class="value">{{sign_in_label}}</span>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- 配置快照 -->
+    <div class="card">
+      <div class="section-title" style="color: #6b7280;">配置快照</div>
+      <table class="metric-table" role="presentation">
+        <tr>
+          <td class="metric-cell">
+            <span class="label">日常任务</span>
+            <span class="value">{{run_daily}}</span>
+          </td>
+          <td class="metric-cell">
+            <span class="label">梦魇巢穴</span>
+            <span class="value">{{run_nightmare}}</span>
+          </td>
+        </tr>
+        <tr>
+          <td class="metric-cell">
+            <span class="label">刷什么</span>
+            <span class="value">{{which_to_farm}}</span>
+          </td>
+          <td class="metric-cell">
+            <span class="label">{{farm_detail1_label}}</span>
+            <span class="value">{{farm_detail1_value}}</span>
+          </td>
+        </tr>
+        <tr style="display: {{farm_detail2_row_display}};">
+          <td class="metric-cell" colspan="2">
+            <span class="label">{{farm_detail2_label}}</span>
+            <span class="value">{{farm_detail2_value}}</span>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- 备注 -->
+    <div class="card" style="display: {{notes_display}};">
+      <div class="section-title" style="color: #6b7280;">备注</div>
+      <table class="metric-table" role="presentation">
+        <tr style="display: {{decision_display}};">
+          <td class="metric-cell">
+            <span class="label">执行</span>
+            <span class="value">{{decision}}</span>
+          </td>
+        </tr>
+        <tr style="display: {{error_display}};">
+          <td class="metric-cell">
+            <span class="label">错误</span>
+            <span class="value">{{error}}</span>
+          </td>
+        </tr>
+      </table>
+    </div>
+  </div>
+</body>
+</html>
