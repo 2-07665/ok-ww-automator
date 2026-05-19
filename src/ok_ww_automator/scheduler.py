@@ -12,7 +12,7 @@ from typing import Literal
 
 from .config import AppConfig, load_config
 from .env_discovery import AccountEnv, discover_account_envs, select_accounts
-from .runners import RunnerContext, run_mode
+from .runners import RUN_STATUS_FAILURE, RunnerContext, RunnerError, run_mode
 from .updater import build_update_plan, run_commands
 
 RunMode = Literal["daily", "stamina"]
@@ -123,7 +123,9 @@ def resolve_modes(mode: RunMode) -> tuple[str, ...]:
 
 def run_job(job: SchedulerJob, *, project_root: Path, ww_root: Path) -> None:
     app_config = validate_job(job, project_root=project_root)
-    run_mode(job.mode, RunnerContext(app_config=app_config, ww_root=ww_root))
+    result = run_mode(job.mode, RunnerContext(app_config=app_config, ww_root=ww_root))
+    if result.status == RUN_STATUS_FAILURE:
+        raise RunnerError(f"Account {job.account.account_id} {job.mode} task failed: {result.error}")
 
 
 def run_jobs(
@@ -139,15 +141,22 @@ def run_jobs(
         run_job(jobs[0], project_root=project_root, ww_root=ww_root)
         return
 
+    errors: list[str] = []
     for job in jobs:
-        run_job_subprocess(
-            job,
-            project_root=project_root,
-            env_dir=env_dir,
-            ww_root=ww_root,
-            ww_remote=ww_remote,
-            ww_branch=ww_branch,
-        )
+        try:
+            run_job_subprocess(
+                job,
+                project_root=project_root,
+                env_dir=env_dir,
+                ww_root=ww_root,
+                ww_remote=ww_remote,
+                ww_branch=ww_branch,
+            )
+        except subprocess.CalledProcessError as exc:
+            errors.append(f"{job.account.account_id}/{job.mode}: exited {exc.returncode}")
+
+    if errors:
+        raise RuntimeError(f"{len(errors)} job(s) failed: " + "; ".join(errors))
 
 
 def run_job_subprocess(

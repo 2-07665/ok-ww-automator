@@ -1,6 +1,7 @@
 from pathlib import Path
 import contextlib
 import io
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -8,7 +9,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from ok_ww_automator.scheduler import build_scheduler_plan, main, resolve_modes
+from ok_ww_automator.env_discovery import AccountEnv
+from ok_ww_automator.scheduler import SchedulerJob, build_scheduler_plan, main, resolve_modes, run_job, run_jobs
 
 
 class SchedulerTest(unittest.TestCase):
@@ -160,6 +162,38 @@ class SchedulerTest(unittest.TestCase):
         self.assertEqual(second_command[second_command.index("--account") + 1], "global")
         self.assertIn("--skip-update", first_command)
         self.assertEqual(subprocess_run.call_args_list[0].kwargs["env"]["ENV_FILE"], str(self.env_dir / "cn.env"))
+
+    def test_run_job_raises_when_runner_returns_failure(self) -> None:
+        job = SchedulerJob(account=AccountEnv("cn", self.env_dir / "cn.env"), mode="daily")
+
+        with (
+            patch("ok_ww_automator.scheduler.validate_job", return_value=object()),
+            patch("ok_ww_automator.scheduler.run_mode") as run_mode,
+        ):
+            run_mode.return_value.status = "failure"
+            run_mode.return_value.error = "boom"
+            with self.assertRaisesRegex(RuntimeError, "cn daily task failed: boom"):
+                run_job(job, project_root=self.tmp, ww_root=self.tmp / "ok-wuthering-waves")
+
+    def test_run_jobs_continues_after_subprocess_failure_and_raises_summary(self) -> None:
+        jobs = (
+            SchedulerJob(account=AccountEnv("cn", self.env_dir / "cn.env"), mode="daily"),
+            SchedulerJob(account=AccountEnv("global", self.env_dir / "global.env"), mode="daily"),
+        )
+
+        with patch("ok_ww_automator.scheduler.run_job_subprocess") as run_subprocess:
+            run_subprocess.side_effect = [subprocess.CalledProcessError(7, ["cmd"]), None]
+            with self.assertRaisesRegex(RuntimeError, "cn/daily: exited 7"):
+                run_jobs(
+                    jobs,
+                    project_root=self.tmp,
+                    env_dir=self.env_dir,
+                    ww_root=self.tmp / "ok-wuthering-waves",
+                    ww_remote="origin",
+                    ww_branch="master",
+                )
+
+        self.assertEqual(run_subprocess.call_count, 2)
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from .models import SheetRunConfig
-from .ok_launcher import OkLauncher, run_onetime_task, ww_runtime_context
+from .ok_launcher import OkLauncher, kill_game_processes, run_onetime_task, ww_runtime_context
 
 
 @dataclass(frozen=True)
@@ -65,8 +65,8 @@ class OkDailyGameClient:
                 )
         finally:
             if ok is not None:
-                ok.device_manager.stop_hwnd()
-                ok.quit()
+                close_ok_runtime(ok)
+            kill_game_processes()
 
 
 class OkStaminaGameClient:
@@ -74,6 +74,7 @@ class OkStaminaGameClient:
         self.launcher = launcher
         self.ok = None
         self.stamina_task = None
+        self.launch_attempted = False
 
     def read_stamina(self, sheet_config: SheetRunConfig) -> tuple[int | None, int | None]:
         with ww_runtime_context(self.launcher.options.ww_root):
@@ -92,16 +93,17 @@ class OkStaminaGameClient:
             )
 
     def close(self, sheet_config: SheetRunConfig) -> None:
-        if self.ok is None:
-            return
-        self.ok.device_manager.stop_hwnd()
-        self.ok.quit()
-        self.ok = None
-        self.stamina_task = None
+        if self.ok is not None:
+            close_ok_runtime(self.ok)
+            self.ok = None
+            self.stamina_task = None
+        if self.launch_attempted:
+            kill_game_processes()
+            self.launch_attempted = False
 
     def _get_stamina_task(self):
         if self.ok is None:
-            self.ok = self.launcher.start_ok_and_game()
+            self.ok = self._start_ok_and_game()
         if self.stamina_task is None:
             from src.task.DailyTask import DailyTask
 
@@ -110,7 +112,7 @@ class OkStaminaGameClient:
 
     def _get_stamina_run_task(self, sheet_config: SheetRunConfig):
         if self.ok is None:
-            self.ok = self.launcher.start_ok_and_game()
+            self.ok = self._start_ok_and_game()
         farm_index = farm_type_index(sheet_config.which_to_farm)
         if farm_index == 0:
             from src.task.TacetTask import TacetTask
@@ -128,6 +130,21 @@ class OkStaminaGameClient:
             task = self.ok.task_executor.get_task_by_class(SimulationTask)
             task.config["Material Selection"] = simulation_material_value(sheet_config.simulation_material)
         return task
+
+    def _start_ok_and_game(self):
+        self.launch_attempted = True
+        return self.launcher.start_ok_and_game()
+
+
+def close_ok_runtime(ok) -> None:
+    try:
+        ok.device_manager.stop_hwnd()
+    except Exception:
+        pass
+    try:
+        ok.quit()
+    except Exception:
+        pass
 
 
 def apply_daily_task_config(sheet_config: SheetRunConfig, daily_task) -> None:

@@ -404,7 +404,7 @@ def append_decision(result: RunResult, decision: str) -> None:
 
 
 def append_retry_decision(result: RunResult, attempt: int, reason: object) -> None:
-    append_decision(result, f"第 {attempt} 次运行失败，准备重试: {reason}")
+    append_decision(result, f"[第 {attempt} 次尝试失败(已触发重试): {reason}]")
 
 
 def fill_if_available(fill, stamina: int | None, backup_stamina: int | None) -> None:
