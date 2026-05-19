@@ -47,9 +47,11 @@ class OkRuntime(Protocol):
 class OkLaunchOptions:
     ww_root: Path
     game_exe_path: Path
-    launch_wait_seconds: float = 120.0
+    launch_wait_seconds: float = 300.0
     ready_timeout_seconds: float = 120.0
     ready_poll_seconds: float = 5.0
+    start_attempts: int = 2
+    restart_settle_seconds: float = 10.0
 
 
 @dataclass(frozen=True)
@@ -92,9 +94,26 @@ class OkLauncher:
 
     def start_ok_and_game(self) -> OkRuntime:
         kill_game_processes()
-        ok = self.start_ok()
-        self.ensure_game_ready(ok)
-        return ok
+        last_error: Exception | None = None
+        for attempt in range(1, self.options.start_attempts + 1):
+            ok: OkRuntime | None = None
+            try:
+                ok = self.start_ok()
+                self.ensure_game_ready(ok)
+                return ok
+            except Exception as exc:
+                last_error = exc
+                if ok is not None:
+                    stop_ok_runtime(ok)
+                kill_game_processes()
+                if attempt < self.options.start_attempts:
+                    self.sleep(self.options.restart_settle_seconds)
+
+        if last_error is not None:
+            raise OkLaunchError(
+                f"OK was not ready after {self.options.start_attempts:g} launch attempt(s): {last_error}"
+            ) from last_error
+        raise OkLaunchError("OK was not ready")
 
     def ensure_game_ready(self, ok: OkRuntime) -> None:
         device_manager = ok.device_manager
@@ -104,9 +123,19 @@ class OkLauncher:
         if not preferred or not preferred.get("connected"):
             imports = load_runtime_imports(self.options.ww_root)
             imports.process_execute(str(self.options.game_exe_path))
-            self.sleep(self.options.launch_wait_seconds)
+            self.wait_for_game_window(ok)
 
         self.refresh_until_ready(ok)
+
+    def wait_for_game_window(self, ok: OkRuntime) -> None:
+        deadline = self.monotonic() + self.options.launch_wait_seconds
+        while self.monotonic() < deadline:
+            ok.device_manager.do_refresh(True)
+            preferred = ok.device_manager.get_preferred_device()
+            if preferred and preferred.get("connected"):
+                return
+            self.sleep(self.options.ready_poll_seconds)
+        raise OkLaunchError(f"Game window was not connected within {self.options.launch_wait_seconds:g} seconds")
 
     def refresh_until_ready(self, ok: OkRuntime) -> None:
         deadline = self.monotonic() + self.options.ready_timeout_seconds
@@ -123,13 +152,27 @@ def is_ok_ready(ok: OkRuntime) -> bool:
     device_manager.do_refresh(True)
     preferred = device_manager.get_preferred_device()
     capture = getattr(device_manager, "capture_method", None)
+    try:
+        capture_connected = capture is not None and capture.connected()
+    except Exception:
+        capture_connected = False
     capture_ready = bool(
         preferred
         and preferred.get("connected")
-        and capture is not None
-        and capture.connected()
+        and capture_connected
     )
     return capture_ready and getattr(device_manager, "interaction", None) is not None
+
+
+def stop_ok_runtime(ok: OkRuntime) -> None:
+    try:
+        ok.device_manager.stop_hwnd()
+    except Exception:
+        pass
+    try:
+        ok.quit()
+    except Exception:
+        pass
 
 
 def run_onetime_task(

@@ -67,9 +67,10 @@ class FakeOk:
     def __init__(self, device_manager, task_executor=None) -> None:
         self.device_manager = device_manager
         self.task_executor = task_executor or FakeExecutor()
+        self.quit_called = False
 
     def quit(self) -> None:
-        pass
+        self.quit_called = True
 
 
 class FakeTask:
@@ -116,7 +117,7 @@ class OkLauncherTest(unittest.TestCase):
         self.assertTrue(is_ok_ready(ready))
         self.assertFalse(is_ok_ready(no_capture))
 
-    def test_ensure_game_ready_launches_when_preferred_device_is_missing(self) -> None:
+    def test_ensure_game_ready_polls_after_launch_when_preferred_device_is_missing(self) -> None:
         device_manager = FakeDeviceManager(None, FakeCapture(True), object())
         ok = FakeOk(device_manager)
         launches = []
@@ -143,7 +144,7 @@ class OkLauncherTest(unittest.TestCase):
 
         self.assertEqual(launches, [str(Path("/game/Wuthering Waves.exe"))])
         self.assertTrue(ok.task_executor.started)
-        self.assertIn(2, clock.sleeps)
+        self.assertNotIn(2, clock.sleeps)
 
     def test_start_ok_keeps_ww_root_on_path_during_ok_construction(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -195,6 +196,38 @@ class OkLauncherTest(unittest.TestCase):
         kill_processes.assert_called_once_with()
         start_ok.assert_called_once_with()
         ensure_game_ready.assert_called_once_with(ok)
+
+    def test_start_ok_and_game_recreates_ok_when_first_launch_gets_stuck(self) -> None:
+        launcher = OkLauncher(
+            OkLaunchOptions(
+                ww_root=Path("/ww"),
+                game_exe_path=Path("/game/Wuthering Waves.exe"),
+                start_attempts=2,
+                restart_settle_seconds=7,
+            ),
+            sleep=lambda seconds: sleeps.append(seconds),
+        )
+        sleeps = []
+        first_ok = FakeOk(FakeDeviceManager({"connected": False}, FakeCapture(False), object()))
+        second_ok = FakeOk(FakeDeviceManager({"connected": True}, FakeCapture(True), object()))
+
+        with (
+            patch("ok_ww_automator.ok_launcher.kill_game_processes") as kill_processes,
+            patch.object(launcher, "start_ok", side_effect=[first_ok, second_ok]) as start_ok,
+            patch.object(
+                launcher,
+                "ensure_game_ready",
+                side_effect=[OkLaunchError("capture stuck"), None],
+            ) as ensure_game_ready,
+        ):
+            self.assertIs(launcher.start_ok_and_game(), second_ok)
+
+        self.assertEqual(start_ok.call_count, 2)
+        self.assertEqual(ensure_game_ready.call_count, 2)
+        self.assertTrue(first_ok.device_manager.stopped)
+        self.assertTrue(first_ok.quit_called)
+        self.assertEqual(kill_processes.call_count, 2)
+        self.assertEqual(sleeps, [7])
 
     def test_kill_game_processes_kills_known_process_names(self) -> None:
         class FakeProc:
