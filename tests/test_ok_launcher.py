@@ -20,26 +20,43 @@ from ok_ww_automator.ok_launcher import (
 
 
 class FakeCapture:
-    def __init__(self, connected: bool = True) -> None:
+    def __init__(self, connected: bool = True, frame=None) -> None:
         self._connected = connected
+        self.frame = frame if frame is not None else FakeFrame()
 
     def connected(self) -> bool:
         return self._connected
 
+    def get_frame(self):
+        return self.frame
+
+
+class FakeFrame:
+    shape = (720, 1280, 3)
+
 
 class FakeDeviceManager:
-    def __init__(self, preferred=None, capture=None, interaction=object()) -> None:
+    def __init__(self, preferred=None, capture=None, interaction=object(), devices=None) -> None:
         self.preferred = preferred
         self.capture_method = capture
         self.interaction = interaction
+        self.devices = devices or []
         self.refreshes = []
+        self.selected_imeis = []
         self.stopped = False
 
     def do_refresh(self, current=False) -> None:
         self.refreshes.append(current)
 
+    def get_devices(self):
+        return self.devices
+
     def get_preferred_device(self):
         return self.preferred
+
+    def set_preferred_device(self, imei=None, index=-1) -> None:
+        self.selected_imeis.append(imei)
+        self.preferred = next((device for device in self.devices if device.get("imei") == imei), self.preferred)
 
     def stop_hwnd(self) -> None:
         self.stopped = True
@@ -117,6 +134,37 @@ class OkLauncherTest(unittest.TestCase):
         self.assertTrue(is_ok_ready(ready))
         self.assertFalse(is_ok_ready(no_capture))
 
+    def test_is_ok_ready_requires_a_real_capture_frame(self) -> None:
+        no_frame = FakeOk(FakeDeviceManager({"connected": True}, FakeCapture(True, frame=False), object()))
+
+        self.assertFalse(is_ok_ready(no_frame))
+
+    def test_ensure_game_ready_waits_for_first_capture_frame(self) -> None:
+        capture = FakeCapture(True, frame=False)
+        device_manager = FakeDeviceManager({"connected": True}, capture, object())
+        ok = FakeOk(device_manager)
+        clock = Clock()
+
+        def make_frame_available(seconds: float) -> None:
+            clock.sleep(seconds)
+            capture.frame = FakeFrame()
+
+        launcher = OkLauncher(
+            OkLaunchOptions(
+                ww_root=Path("/ww"),
+                game_exe_path=Path("/game/Wuthering Waves.exe"),
+                ready_timeout_seconds=3,
+                ready_poll_seconds=1,
+            ),
+            sleep=make_frame_available,
+            monotonic=clock.monotonic,
+        )
+
+        launcher.ensure_game_ready(ok)
+
+        self.assertTrue(ok.task_executor.started)
+        self.assertEqual(clock.sleeps, [1])
+
     def test_ensure_game_ready_polls_after_launch_when_preferred_device_is_missing(self) -> None:
         device_manager = FakeDeviceManager(None, FakeCapture(True), object())
         ok = FakeOk(device_manager)
@@ -145,6 +193,28 @@ class OkLauncherTest(unittest.TestCase):
         self.assertEqual(launches, [str(Path("/game/Wuthering Waves.exe"))])
         self.assertTrue(ok.task_executor.started)
         self.assertNotIn(2, clock.sleeps)
+
+    def test_ensure_game_ready_selects_connected_device_when_saved_preference_is_stale(self) -> None:
+        stale = {"imei": "pc", "connected": False}
+        connected = {"imei": "pc_123", "connected": True}
+        device_manager = FakeDeviceManager(stale, FakeCapture(True), object(), devices=[stale, connected])
+        ok = FakeOk(device_manager)
+        clock = Clock()
+        launcher = OkLauncher(
+            OkLaunchOptions(
+                ww_root=Path("/ww"),
+                game_exe_path=Path("/game/Wuthering Waves.exe"),
+                ready_timeout_seconds=3,
+                ready_poll_seconds=1,
+            ),
+            sleep=clock.sleep,
+            monotonic=clock.monotonic,
+        )
+
+        launcher.ensure_game_ready(ok)
+
+        self.assertEqual(device_manager.selected_imeis, ["pc_123"])
+        self.assertTrue(ok.task_executor.started)
 
     def test_start_ok_keeps_ww_root_on_path_during_ok_construction(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -32,6 +32,18 @@ The project is structured to enforce a strict boundary between high-level orches
 7. **Upstream Context**: `ok_launcher.py` temporarily adds the `ok-wuthering-waves` checkout to `sys.path` and temporarily switches `cwd` so upstream relative paths such as `configs/`, `logs/`, and `screenshots/` resolve inside `ok-wuthering-waves`.
 8. **Scheduler Entrypoint**: `src/ok_ww_automator/scheduler.py` is the intended Windows Task Scheduler entrypoint. Multi-account runs must spawn isolated Python child processes because `ok-script` keeps process-global state and named Windows mutexes.
 
+## Log-Driven Bug Fix Workflow
+
+The user will frequently provide or refresh `ok-wuthering-waves/logs/ok-script.log` and ask for bugs to be fixed from the log evidence. These logs can be very large.
+
+1. **Update Upstream First**: At the start of a bug fix, run `git pull` in sibling checkouts `../ok-script` and `../ok-wuthering-waves` so the investigation accounts for upstream changes that may have broken or fixed the workflow. If either checkout has local changes or pull fails, report that and continue from the available state without overwriting user work.
+2. **Sample, Then Search**: Do not dump the whole log. Start with `tail -n 200 ../ok-wuthering-waves/logs/ok-script.log` from `ok-ww-automator`, then use targeted `rg -n` searches for timestamps, task names, `ERROR`, `WARNING`, `Traceback`, `exception`, `timeout`, `stuck`, `TaskExecutor`, `StartController`, `DeviceManager`, and mode-specific terms such as `stamina`, `daily`, or the task name in question.
+3. **Correlate Timeline**: Identify the first failure, later retries/restarts, and the last repeated symptom. Repeated heartbeat lines are usually less important than the transition where expected lines stop appearing.
+4. **Prefer Adapter Fixes**: When the log points to scheduler, launcher, retry, environment, process, or task-selection behavior, fix `ok-ww-automator` first. Only modify `ok-wuthering-waves` or `ok-script` if the user explicitly asks and the root cause is clearly in upstream code.
+5. **Keep Evidence Tight**: In the response, cite the key log lines or timestamps and explain why they imply the fix. Avoid pasting long tracebacks unless the user asks.
+6. **Add Regression Coverage**: Add or update focused unit tests that reproduce the logged failure mode with fakes/mocks. Keep tests in `ok-ww-automator/tests` unless the touched code is elsewhere.
+7. **Protect Runtime Artifacts**: Do not create `ok-ww-automator/.venv`, do not let `uv.lock` drift while investigating, and do not edit upstream logs/configs/screenshots as part of a fix unless the user asks.
+
 ## Development & Testing
 
 Always verify changes by running the full test suite from the project root:
