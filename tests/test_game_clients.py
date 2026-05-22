@@ -1,13 +1,18 @@
 from pathlib import Path
+import json
+import subprocess
 import sys
 import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from ok_ww_automator.config import AppConfig
 from ok_ww_automator.models import SheetRunConfig
 from ok_ww_automator.game_clients import (
     OkStaminaGameClient,
+    SubprocessDailyGameClient,
+    SubprocessStaminaGameClient,
     apply_daily_task_config,
     simulation_material_value,
     stamina_burn_unit,
@@ -164,6 +169,68 @@ class OkStaminaGameClientTest(unittest.TestCase):
             client.close(SheetRunConfig())
 
         kill_processes.assert_called_once_with()
+
+
+class SubprocessGameClientTest(unittest.TestCase):
+    def test_daily_attempt_runs_in_child_process_and_returns_outcome(self) -> None:
+        app_config = AppConfig(
+            project_root=Path("/project"),
+            env_path=Path("/project/env/cn.env"),
+            game_exe_path=Path("/game/Wuthering Waves.exe"),
+        )
+        sheet_config = SheetRunConfig(which_to_farm="模拟领域")
+
+        def fake_run(command, env, check):
+            input_path = Path(command[command.index("--input") + 1])
+            output_path = Path(command[command.index("--output") + 1])
+            payload = json.loads(input_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["sheet_config"]["which_to_farm"], "模拟领域")
+            self.assertEqual(env["ENV_FILE"], str(app_config.env_path))
+            self.assertFalse(check)
+            output_path.write_text(json.dumps({"daily_points": 100}), encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0)
+
+        with patch("ok_ww_automator.game_clients.subprocess.run", side_effect=fake_run) as run:
+            outcome = SubprocessDailyGameClient(app_config, ww_root=Path("/ww")).run_daily(sheet_config)
+
+        self.assertEqual(outcome.daily_points, 100)
+        command = run.call_args.args[0]
+        self.assertIn("ok_ww_automator.game_attempt", command)
+        self.assertEqual(command[command.index("--mode") + 1], "daily")
+        self.assertEqual(command[command.index("--operation") + 1], "run")
+
+    def test_stamina_attempt_reads_tuple_from_child_process(self) -> None:
+        app_config = AppConfig(
+            project_root=Path("/project"),
+            env_path=Path("/project/env/cn.env"),
+            game_exe_path=Path("/game/Wuthering Waves.exe"),
+        )
+
+        def fake_run(command, env, check):
+            output_path = Path(command[command.index("--output") + 1])
+            output_path.write_text(json.dumps({"stamina": 70, "backup_stamina": 10}), encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0)
+
+        with patch("ok_ww_automator.game_clients.subprocess.run", side_effect=fake_run):
+            stamina = SubprocessStaminaGameClient(app_config, ww_root=Path("/ww")).read_stamina(SheetRunConfig())
+
+        self.assertEqual(stamina, (70, 10))
+
+    def test_child_process_error_is_raised_with_payload_message(self) -> None:
+        app_config = AppConfig(
+            project_root=Path("/project"),
+            env_path=Path("/project/env/cn.env"),
+            game_exe_path=Path("/game/Wuthering Waves.exe"),
+        )
+
+        def fake_run(command, env, check):
+            output_path = Path(command[command.index("--output") + 1])
+            output_path.write_text(json.dumps({"error": "RuntimeError: child failed"}), encoding="utf-8")
+            return subprocess.CompletedProcess(command, 1)
+
+        with patch("ok_ww_automator.game_clients.subprocess.run", side_effect=fake_run):
+            with self.assertRaisesRegex(RuntimeError, "child failed"):
+                SubprocessDailyGameClient(app_config, ww_root=Path("/ww")).run_daily(SheetRunConfig())
 
 
 if __name__ == "__main__":

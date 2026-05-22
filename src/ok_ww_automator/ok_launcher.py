@@ -65,6 +65,31 @@ class RuntimeImports:
     process_execute: Callable[[str], Any]
 
 
+def install_runtime_safety_patches() -> None:
+    """Patch upstream ok-script frame handling for transient capture gaps."""
+    try:
+        task_module = importlib.import_module("ok.task.task")
+    except Exception:
+        return
+
+    find_feature_class = getattr(task_module, "FindFeature", None)
+    if find_feature_class is None or getattr(find_feature_class, "_ok_ww_missing_frame_patch", False):
+        return
+
+    original_find_feature = find_feature_class.find_feature
+
+    def find_feature_with_missing_frame_guard(self, *args, **kwargs):
+        frame = kwargs.get("frame")
+        if frame is None:
+            frame = getattr(getattr(self, "executor", None), "frame", None)
+        if frame is None or not hasattr(frame, "shape"):
+            return []
+        return original_find_feature(self, *args, **kwargs)
+
+    find_feature_class.find_feature = find_feature_with_missing_frame_guard
+    find_feature_class._ok_ww_missing_frame_patch = True
+
+
 class OkLauncher:
     def __init__(
         self,
@@ -259,6 +284,7 @@ def load_runtime_imports(ww_root: Path) -> RuntimeImports:
         config_module = importlib.import_module("config")
         ok_module = importlib.import_module("ok")
         process_module = importlib.import_module("ok.util.process")
+        install_runtime_safety_patches()
     return RuntimeImports(
         ok_class=ok_module.OK,
         config=config_module.config,

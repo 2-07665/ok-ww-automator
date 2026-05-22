@@ -20,17 +20,20 @@ The project is structured to enforce a strict boundary between high-level orches
 3. **One-Way Configuration**: Live game state (e.g., current stamina) is **never** written back to the Google Sheets `Config` worksheet. It is only appended to log worksheets.
 4. **Stateless Runners**: Runners should not maintain internal state across multiple game attempts; use `models.RunResult` to accumulate outcome data.
 5. **Upstream Purity**: Treat `ok-wuthering-waves` as a clean upstream checkout. Do not add files to it or require a `custom/` package inside it.
+6. **Runtime Patches Are Fragile**: `src/ok_ww_automator/ok_launcher.py` currently installs an automator-side runtime patch against upstream `ok.task.task.FindFeature.find_feature`. The patch makes missing/invalid capture frames return an empty feature result instead of crashing in `FeatureSet.check_size()` with `NoneType object has no attribute 'shape'`. This is intentionally narrow, but fragile because it monkey-patches `ok-script` internals; re-check it whenever `ok-script` changes task/frame/feature APIs.
+7. **Retries Must Isolate OK Runtime**: `ok-script` creates process-global state and a cwd-based Windows mutex in `OK.__init__()`, and `ok.quit()` does not release everything needed for a clean second lifecycle. Retry attempts must therefore use the subprocess-backed game clients (`SubprocessDailyGameClient` / `SubprocessStaminaGameClient`) so every game attempt runs in a fresh Python process. Do not recreate `OkDailyGameClient` or `OkStaminaGameClient` repeatedly in the same parent process.
 
 ## Project Assumptions
 
 1. **Repository Layout**: `ok-ww-automator` and `ok-wuthering-waves` are sibling checkouts under one parent workspace, commonly `D:\dev\game\ok-ww`. The automator may also reference `ok-script`, but changes for this project should stay in `ok-ww-automator` unless the user explicitly asks otherwise.
 2. **Shared Virtual Environment**: Use one parent virtual environment for both `ok-ww-automator` and `ok-wuthering-waves`: `<workspace>/.venv`. Do not create or use `ok-ww-automator/.venv`. When running commands from this repo, prefer the shared interpreter directly, for example `../.venv/Scripts/python.exe -m unittest discover -s tests` on Windows or `../.venv/bin/python -m unittest discover -s tests` on POSIX.
-3. **uv Usage**: Avoid plain `uv run` from inside `ok-ww-automator`; it can create a local project `.venv` and rewrite `uv.lock` for the current platform. If using uv, use the already-active shared environment (`uv run --active ...`) or install into the parent environment intentionally.
-4. **Windows Runtime Target**: The scheduled automation is designed for Windows Task Scheduler. Imported task XML files must point to the parent `.venv` Python executable and use the parent workspace as the working directory.
-5. **Account Profiles**: Runtime configuration is loaded from process environment plus an optional dotenv file. Account files live in `env/`; bare `ENV_FILE` values like `cn.env` resolve to `env/cn.env`.
-6. **Game Path**: `GAME_EXE_PATH` is required before launching the game adapter and must point to `Wuthering Waves.exe`, not the `Client-Win64-Shipping.exe` binary.
-7. **Upstream Context**: `ok_launcher.py` temporarily adds the `ok-wuthering-waves` checkout to `sys.path` and temporarily switches `cwd` so upstream relative paths such as `configs/`, `logs/`, and `screenshots/` resolve inside `ok-wuthering-waves`.
-8. **Scheduler Entrypoint**: `src/ok_ww_automator/scheduler.py` is the intended Windows Task Scheduler entrypoint. Multi-account runs must spawn isolated Python child processes because `ok-script` keeps process-global state and named Windows mutexes.
+3. **WSL vs Windows Git Status**: The workspace is commonly accessed from both Windows and WSL. WSL Git may report massive `M` lists in sibling checkouts like `../ok-script` even when Windows Git reports clean; equal insert/delete diffs usually indicate CRLF/LF normalization noise, not real source edits. Check `git status --porcelain=v2 --branch`, `git diff --stat`, and branch ahead/behind before declaring the checkout dirty or blocked.
+4. **uv Usage**: Avoid plain `uv run` from inside `ok-ww-automator`; it can create a local project `.venv` and rewrite `uv.lock` for the current platform. If using uv, use the already-active shared environment (`uv run --active ...`) or install into the parent environment intentionally.
+5. **Windows Runtime Target**: The scheduled automation is designed for Windows Task Scheduler. Imported task XML files must point to the parent `.venv` Python executable and use the parent workspace as the working directory.
+6. **Account Profiles**: Runtime configuration is loaded from process environment plus an optional dotenv file. Account files live in `env/`; bare `ENV_FILE` values like `cn.env` resolve to `env/cn.env`.
+7. **Game Path**: `GAME_EXE_PATH` is required before launching the game adapter and must point to `Wuthering Waves.exe`, not the `Client-Win64-Shipping.exe` binary.
+8. **Upstream Context**: `ok_launcher.py` temporarily adds the `ok-wuthering-waves` checkout to `sys.path` and temporarily switches `cwd` so upstream relative paths such as `configs/`, `logs/`, and `screenshots/` resolve inside `ok-wuthering-waves`.
+9. **Scheduler Entrypoint**: `src/ok_ww_automator/scheduler.py` is the intended Windows Task Scheduler entrypoint. Multi-account runs must spawn isolated Python child processes because `ok-script` keeps process-global state and named Windows mutexes.
 
 ## Log-Driven Bug Fix Workflow
 
@@ -57,6 +60,15 @@ Always verify changes by running the full test suite from the project root:
 ```
 
 *Note: On POSIX, use `../.venv/bin/python`.*
+
+If the shared Windows virtual environment cannot be executed from WSL, for example `../.venv/Scripts/python.exe` fails with a WSL socket/bind error and no POSIX `../.venv/bin/python` exists, use local `python3` for verification:
+
+```bash
+python3 -m unittest discover -s tests
+python3 -m compileall -q src tests main.py
+```
+
+State clearly in the final response that verification used local `python3` instead of the shared Windows venv.
 
 ## Future Work
 
