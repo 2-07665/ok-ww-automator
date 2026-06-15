@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from dataclasses import dataclass
+import json
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
 from typing import Protocol
 
+from .config import AppConfig
 from .models import SheetRunConfig
 from .ok_launcher import OkLauncher, kill_game_processes, run_onetime_task, ww_runtime_context
 
@@ -67,6 +75,16 @@ class OkDailyGameClient:
             if ok is not None:
                 close_ok_runtime(ok)
             kill_game_processes()
+
+
+class SubprocessDailyGameClient:
+    def __init__(self, app_config: AppConfig, *, ww_root: Path) -> None:
+        self.app_config = app_config
+        self.ww_root = ww_root
+
+    def run_daily(self, sheet_config: SheetRunConfig) -> DailyGameOutcome:
+        payload = run_game_attempt_subprocess(self.app_config, self.ww_root, "daily", "run", sheet_config)
+        return DailyGameOutcome(**payload)
 
 
 class OkStaminaGameClient:
@@ -134,6 +152,80 @@ class OkStaminaGameClient:
     def _start_ok_and_game(self):
         self.launch_attempted = True
         return self.launcher.start_ok_and_game()
+
+
+class SubprocessStaminaGameClient:
+    def __init__(self, app_config: AppConfig, *, ww_root: Path) -> None:
+        self.app_config = app_config
+        self.ww_root = ww_root
+
+    def read_stamina(self, sheet_config: SheetRunConfig) -> tuple[int | None, int | None]:
+        payload = run_game_attempt_subprocess(self.app_config, self.ww_root, "stamina", "read", sheet_config)
+        return payload["stamina"], payload["backup_stamina"]
+
+    def run_stamina(self, sheet_config: SheetRunConfig) -> StaminaGameOutcome:
+        payload = run_game_attempt_subprocess(self.app_config, self.ww_root, "stamina", "run", sheet_config)
+        return StaminaGameOutcome(**payload)
+
+    def close(self, sheet_config: SheetRunConfig) -> None:
+        return None
+
+
+def run_game_attempt_subprocess(
+    app_config: AppConfig,
+    ww_root: Path,
+    mode: str,
+    operation: str,
+    sheet_config: SheetRunConfig,
+) -> dict:
+    with tempfile.TemporaryDirectory(prefix="ok-ww-attempt-") as temp_dir:
+        temp_path = Path(temp_dir)
+        input_path = temp_path / "input.json"
+        output_path = temp_path / "output.json"
+        input_path.write_text(
+            json.dumps({"sheet_config": asdict(sheet_config)}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        command = [
+            sys.executable,
+            "-m",
+            "ok_ww_automator.game_attempt",
+            "--project-root",
+            str(app_config.project_root),
+            "--env-file",
+            str(app_config.env_path),
+            "--ww-root",
+            str(ww_root),
+            "--mode",
+            mode,
+            "--operation",
+            operation,
+            "--input",
+            str(input_path),
+            "--output",
+            str(output_path),
+        ]
+        env = dict(os.environ)
+        env["ENV_FILE"] = str(app_config.env_path)
+
+        completed = subprocess.run(command, env=env, check=False)
+        payload = read_attempt_payload(output_path)
+        if completed.returncode != 0:
+            message = payload.get("error") if isinstance(payload, dict) else None
+            raise RuntimeError(message or f"Game attempt subprocess exited {completed.returncode}")
+        if not isinstance(payload, dict):
+            raise RuntimeError("Game attempt subprocess did not return a JSON object")
+        return payload
+
+
+def read_attempt_payload(output_path: Path) -> dict:
+    if not output_path.exists():
+        return {}
+    try:
+        return json.loads(output_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Game attempt subprocess wrote invalid JSON: {exc}") from exc
 
 
 def close_ok_runtime(ok) -> None:

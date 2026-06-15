@@ -14,15 +14,14 @@ from .config import AppConfig, RetryConfig
 from .game_clients import (
     DailyGameClient,
     DailyGameOutcome,
-    OkDailyGameClient,
-    OkStaminaGameClient,
     StaminaGameClient,
     StaminaGameOutcome,
+    SubprocessDailyGameClient,
+    SubprocessStaminaGameClient,
     stamina_burn_unit,
 )
 from .models import RunResult, SheetRunConfig
 from .notices import NoticeClient, NullNoticeClient, notice_client_from_config, should_notify
-from .ok_launcher import OkLauncher
 from .sheets import GoogleSheetsStore
 from .time_utils import calculate_burn, now
 from .waves_api import WavesApiClient, WavesDailyInfo, is_api_success
@@ -75,8 +74,7 @@ class SheetsRunStore(Protocol):
 def run_mode(mode: str, context: RunnerContext) -> RunResult:
     if mode == "daily":
         store = GoogleSheetsStore.from_config(context.app_config.google_sheets)
-        launcher = OkLauncher.from_app_config(context.app_config, ww_root=context.ww_root)
-        game_client = OkDailyGameClient(launcher)
+        game_client = SubprocessDailyGameClient(context.app_config, ww_root=context.ww_root)
         api_client = api_client_from_config(context.app_config)
         notice_client = notice_client_from_config(context.app_config.notice)
         return DailyRunner(
@@ -88,8 +86,7 @@ def run_mode(mode: str, context: RunnerContext) -> RunResult:
         ).run()
     if mode == "stamina":
         store = GoogleSheetsStore.from_config(context.app_config.google_sheets)
-        launcher = OkLauncher.from_app_config(context.app_config, ww_root=context.ww_root)
-        game_client = OkStaminaGameClient(launcher)
+        game_client = SubprocessStaminaGameClient(context.app_config, ww_root=context.ww_root)
         api_client = api_client_from_config(context.app_config)
         notice_client = notice_client_from_config(context.app_config.notice)
         return StaminaRunner(
