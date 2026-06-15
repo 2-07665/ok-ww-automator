@@ -12,6 +12,7 @@ from ok_ww_automator.ok_launcher import (
     OkLaunchOptions,
     get_task_error,
     is_ok_ready,
+    kill_game_processes,
     run_onetime_task,
     ww_import_path,
     ww_runtime_context,
@@ -174,6 +175,55 @@ class OkLauncherTest(unittest.TestCase):
             self.assertEqual(seen, [(True, ww_root, False)])
             self.assertNotIn(str(ww_root), sys.path)
             self.assertNotEqual(Path.cwd(), ww_root)
+
+    def test_start_ok_and_game_kills_existing_game_processes_before_starting(self) -> None:
+        launcher = OkLauncher(
+            OkLaunchOptions(
+                ww_root=Path("/ww"),
+                game_exe_path=Path("/game/Wuthering Waves.exe"),
+            )
+        )
+        ok = FakeOk(FakeDeviceManager({"connected": True}, FakeCapture(True), object()))
+
+        with (
+            patch("ok_ww_automator.ok_launcher.kill_game_processes") as kill_processes,
+            patch.object(launcher, "start_ok", return_value=ok) as start_ok,
+            patch.object(launcher, "ensure_game_ready") as ensure_game_ready,
+        ):
+            self.assertIs(launcher.start_ok_and_game(), ok)
+
+        kill_processes.assert_called_once_with()
+        start_ok.assert_called_once_with()
+        ensure_game_ready.assert_called_once_with(ok)
+
+    def test_kill_game_processes_kills_known_process_names(self) -> None:
+        class FakeProc:
+            def __init__(self, name: str | None) -> None:
+                self.info = {"name": name}
+                self.killed = False
+
+            def kill(self) -> None:
+                self.killed = True
+
+        game_launcher = FakeProc("Wuthering Waves.exe")
+        game_client = FakeProc("Client-Win64-Shipping.exe")
+        unrelated = FakeProc("notepad.exe")
+
+        class FakePsutil:
+            NoSuchProcess = RuntimeError
+            AccessDenied = PermissionError
+
+            @staticmethod
+            def process_iter(attrs):
+                self.assertEqual(attrs, ["name", "exe"])
+                return [game_launcher, game_client, unrelated]
+
+        with patch.dict(sys.modules, {"psutil": FakePsutil}):
+            kill_game_processes()
+
+        self.assertTrue(game_launcher.killed)
+        self.assertTrue(game_client.killed)
+        self.assertFalse(unrelated.killed)
 
     def test_run_onetime_task_returns_task_error(self) -> None:
         task = FakeTask(enabled=False, error="bad state")

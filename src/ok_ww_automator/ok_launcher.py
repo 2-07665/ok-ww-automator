@@ -91,6 +91,7 @@ class OkLauncher:
         return ok
 
     def start_ok_and_game(self) -> OkRuntime:
+        kill_game_processes()
         ok = self.start_ok()
         self.ensure_game_ready(ok)
         return ok
@@ -219,3 +220,25 @@ def working_directory(path: Path) -> Iterator[None]:
         yield
     finally:
         os.chdir(previous)
+
+
+def kill_game_processes() -> None:
+    """Best-effort cleanup of all known Wuthering Waves game processes."""
+    import subprocess
+
+    try:
+        import psutil
+        for proc in psutil.process_iter(["name", "exe"]):
+            try:
+                name = proc.info.get("name")
+                if not name:
+                    continue
+                if name in ("Wuthering Waves.exe", "Client-Win64-Shipping.exe"):
+                    proc.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+    except ImportError:
+        import os
+        if os.name == "nt":
+            for name in ("Wuthering Waves.exe", "Client-Win64-Shipping.exe"):
+                subprocess.run(["taskkill", "/F", "/IM", name], capture_output=True, check=False)

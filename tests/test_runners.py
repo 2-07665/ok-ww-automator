@@ -260,7 +260,7 @@ class DailyRunnerTest(unittest.TestCase):
         self.assertEqual(result.status, "success")
         self.assertEqual(len(game.configs), 2)
         self.assertEqual(sleeps, [4])
-        self.assertIn("准备重试", result.decision)
+        self.assertIn("已触发重试", result.decision)
 
     def test_daily_notice_runs_once_for_final_failure(self) -> None:
         store = FakeStore()
@@ -476,7 +476,7 @@ class StaminaRunnerTest(unittest.TestCase):
         self.assertEqual(result.status, "success")
         self.assertEqual(len(game.read_configs), 2)
         self.assertEqual(sleeps, [3])
-        self.assertIn("准备重试", result.decision)
+        self.assertIn("已触发重试", result.decision)
 
     def test_stamina_notice_sends_expected_skip_until_healthchecks_exist(self) -> None:
         store = FakeStore()
