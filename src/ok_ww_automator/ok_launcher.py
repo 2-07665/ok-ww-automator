@@ -24,7 +24,11 @@ class DeviceManager(Protocol):
 
     def do_refresh(self, current: bool = False) -> None: ...
 
+    def get_devices(self) -> list[dict[str, Any]]: ...
+
     def get_preferred_device(self) -> dict[str, Any] | None: ...
+
+    def set_preferred_device(self, imei: str | None = None, index: int = -1) -> None: ...
 
     def stop_hwnd(self) -> None: ...
 
@@ -117,8 +121,7 @@ class OkLauncher:
 
     def ensure_game_ready(self, ok: OkRuntime) -> None:
         device_manager = ok.device_manager
-        device_manager.do_refresh(True)
-        preferred = device_manager.get_preferred_device()
+        preferred = refresh_and_select_connected_device(device_manager)
 
         if not preferred or not preferred.get("connected"):
             imports = load_runtime_imports(self.options.ww_root)
@@ -130,8 +133,7 @@ class OkLauncher:
     def wait_for_game_window(self, ok: OkRuntime) -> None:
         deadline = self.monotonic() + self.options.launch_wait_seconds
         while self.monotonic() < deadline:
-            ok.device_manager.do_refresh(True)
-            preferred = ok.device_manager.get_preferred_device()
+            preferred = refresh_and_select_connected_device(ok.device_manager)
             if preferred and preferred.get("connected"):
                 return
             self.sleep(self.options.ready_poll_seconds)
@@ -140,6 +142,7 @@ class OkLauncher:
     def refresh_until_ready(self, ok: OkRuntime) -> None:
         deadline = self.monotonic() + self.options.ready_timeout_seconds
         while self.monotonic() < deadline:
+            refresh_and_select_connected_device(ok.device_manager)
             if is_ok_ready(ok):
                 ok.task_executor.start()
                 return
@@ -147,21 +150,52 @@ class OkLauncher:
         raise OkLaunchError(f"OK was not ready within {self.options.ready_timeout_seconds:g} seconds")
 
 
+def refresh_and_select_connected_device(device_manager: DeviceManager) -> dict[str, Any] | None:
+    device_manager.do_refresh(True)
+    preferred = device_manager.get_preferred_device()
+    if preferred and preferred.get("connected"):
+        return preferred
+
+    connected = first_connected_device(device_manager)
+    if connected is None:
+        return preferred
+
+    device_manager.set_preferred_device(connected.get("imei"))
+    device_manager.do_refresh(True)
+    return device_manager.get_preferred_device()
+
+
+def first_connected_device(device_manager: DeviceManager) -> dict[str, Any] | None:
+    try:
+        devices = device_manager.get_devices()
+    except Exception:
+        return None
+    return next((device for device in devices if device.get("connected")), None)
+
+
 def is_ok_ready(ok: OkRuntime) -> bool:
     device_manager = ok.device_manager
     device_manager.do_refresh(True)
     preferred = device_manager.get_preferred_device()
     capture = getattr(device_manager, "capture_method", None)
-    try:
-        capture_connected = capture is not None and capture.connected()
-    except Exception:
-        capture_connected = False
     capture_ready = bool(
         preferred
         and preferred.get("connected")
-        and capture_connected
+        and has_capture_frame(capture)
     )
     return capture_ready and getattr(device_manager, "interaction", None) is not None
+
+
+def has_capture_frame(capture: Any) -> bool:
+    if capture is None:
+        return False
+    try:
+        if not capture.connected():
+            return False
+        frame = capture.get_frame()
+    except Exception:
+        return False
+    return frame is not None and hasattr(frame, "shape")
 
 
 def stop_ok_runtime(ok: OkRuntime) -> None:
