@@ -13,6 +13,7 @@ from ok_ww_automator.game_clients import (
     OkStaminaGameClient,
     SubprocessDailyGameClient,
     SubprocessStaminaGameClient,
+    WINDOWS_ACCESS_VIOLATION_EXIT_CODE,
     apply_daily_task_config,
     simulation_material_value,
     stamina_burn_unit,
@@ -231,6 +232,42 @@ class SubprocessGameClientTest(unittest.TestCase):
         with patch("ok_ww_automator.game_clients.subprocess.run", side_effect=fake_run):
             with self.assertRaisesRegex(RuntimeError, "child failed"):
                 SubprocessDailyGameClient(app_config, ww_root=Path("/ww")).run_daily(SheetRunConfig())
+
+    def test_native_teardown_crash_after_stamina_result_is_accepted(self) -> None:
+        app_config = AppConfig(
+            project_root=Path("/project"),
+            env_path=Path("/project/env/cn.env"),
+            game_exe_path=Path("/game/Wuthering Waves.exe"),
+        )
+
+        def fake_run(command, env, check):
+            output_path = Path(command[command.index("--output") + 1])
+            output_path.write_text(
+                json.dumps({"stamina_left": 14, "backup_stamina_left": 7, "task_error": None}),
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(command, WINDOWS_ACCESS_VIOLATION_EXIT_CODE)
+
+        with patch("ok_ww_automator.game_clients.subprocess.run", side_effect=fake_run):
+            outcome = SubprocessStaminaGameClient(app_config, ww_root=Path("/ww")).run_stamina(SheetRunConfig())
+
+        self.assertEqual(outcome.stamina_left, 14)
+        self.assertEqual(outcome.backup_stamina_left, 7)
+        self.assertIsNone(outcome.task_error)
+
+    def test_native_teardown_crash_without_result_still_fails(self) -> None:
+        app_config = AppConfig(
+            project_root=Path("/project"),
+            env_path=Path("/project/env/cn.env"),
+            game_exe_path=Path("/game/Wuthering Waves.exe"),
+        )
+
+        def fake_run(command, env, check):
+            return subprocess.CompletedProcess(command, WINDOWS_ACCESS_VIOLATION_EXIT_CODE)
+
+        with patch("ok_ww_automator.game_clients.subprocess.run", side_effect=fake_run):
+            with self.assertRaisesRegex(RuntimeError, "Game attempt subprocess exited 3221225477"):
+                SubprocessStaminaGameClient(app_config, ww_root=Path("/ww")).run_stamina(SheetRunConfig())
 
 
 if __name__ == "__main__":

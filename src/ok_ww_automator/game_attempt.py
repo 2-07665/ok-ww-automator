@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict
 import json
+import os
 from pathlib import Path
+import sys
 import traceback
 
 from .config import load_config
@@ -76,4 +78,7 @@ def write_payload(output_path: Path, payload: dict) -> None:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    exit_code = main()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(exit_code)

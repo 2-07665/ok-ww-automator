@@ -16,6 +16,13 @@ from .config import AppConfig
 from .models import SheetRunConfig
 from .ok_launcher import OkLauncher, kill_game_processes, run_onetime_task, ww_runtime_context
 
+WINDOWS_ACCESS_VIOLATION_EXIT_CODE = 0xC0000005
+WINDOWS_ACCESS_VIOLATION_SIGNED_EXIT_CODE = -1073741819
+WINDOWS_NATIVE_TEARDOWN_EXIT_CODES = {
+    WINDOWS_ACCESS_VIOLATION_EXIT_CODE,
+    WINDOWS_ACCESS_VIOLATION_SIGNED_EXIT_CODE,
+}
+
 
 @dataclass(frozen=True)
 class DailyGameOutcome:
@@ -212,6 +219,8 @@ def run_game_attempt_subprocess(
         completed = subprocess.run(command, env=env, check=False)
         payload = read_attempt_payload(output_path)
         if completed.returncode != 0:
+            if is_native_teardown_crash(completed.returncode) and is_attempt_result_payload(payload, mode, operation):
+                return payload
             message = payload.get("error") if isinstance(payload, dict) else None
             raise RuntimeError(message or f"Game attempt subprocess exited {completed.returncode}")
         if not isinstance(payload, dict):
@@ -226,6 +235,22 @@ def read_attempt_payload(output_path: Path) -> dict:
         return json.loads(output_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"Game attempt subprocess wrote invalid JSON: {exc}") from exc
+
+
+def is_native_teardown_crash(returncode: int) -> bool:
+    return returncode in WINDOWS_NATIVE_TEARDOWN_EXIT_CODES
+
+
+def is_attempt_result_payload(payload: object, mode: str, operation: str) -> bool:
+    if not isinstance(payload, dict) or "error" in payload:
+        return False
+    if mode == "daily" and operation == "run":
+        return any(key in payload for key in DailyGameOutcome.__dataclass_fields__)
+    if mode == "stamina" and operation == "read":
+        return "stamina" in payload and "backup_stamina" in payload
+    if mode == "stamina" and operation == "run":
+        return any(key in payload for key in StaminaGameOutcome.__dataclass_fields__)
+    return False
 
 
 def close_ok_runtime(ok) -> None:
