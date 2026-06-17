@@ -21,4 +21,4 @@ If you wish to run the standard OK graphical interface but with the automator's 
 uv run --active python -m ok_ww_automator.ok_main
 ```
 
-This acts as a drop-in replacement for `python main.py` in `ok-wuthering-waves`, appending tasks like `FastFarmEchoTask` and `StaminaTask` to the in-memory configuration without modifying the upstream source.
+This acts as a drop-in replacement for `python main.py` in `ok-wuthering-waves`, appending tasks like `FastFarmEchoTask` and `FiveToOneTask` to the in-memory configuration without modifying the upstream source.

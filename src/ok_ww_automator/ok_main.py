@@ -14,7 +14,6 @@ DEFAULT_WW_ROOT = Path(__file__).resolve().parents[3] / "ok-wuthering-waves"
 EXTRA_ONETIME_TASKS: tuple[tuple[str, str], ...] = (
     ("ok_ww_automator.ok_tasks.fast_farm_echo", "FastFarmEchoTask"),
     ("ok_ww_automator.ok_tasks.five_to_one", "FiveToOneTask"),
-    ("ok_ww_automator.ok_tasks.stamina", "StaminaTask"),
     ("ok_ww_automator.ok_tasks.echo_ocr", "EchoOCRTask"),
 )
 

@@ -414,7 +414,7 @@ class StaminaRunnerTest(unittest.TestCase):
         store = FakeStore()
         game = FakeStaminaGameClient(
             stamina=(60, 0),
-            outcome=StaminaGameOutcome(stamina_left=0, backup_stamina_left=0, task_error="StaminaTask: bad"),
+            outcome=StaminaGameOutcome(stamina_left=0, backup_stamina_left=0, task_error="TacetTask: bad"),
         )
         start = dt.datetime(2026, 5, 15, 9, 0, tzinfo=BEIJING_TZ)
 
@@ -428,7 +428,7 @@ class StaminaRunnerTest(unittest.TestCase):
             ).run()
 
         self.assertEqual(result.status, "needs review")
-        self.assertEqual(result.error, "StaminaTask: bad")
+        self.assertEqual(result.error, "TacetTask: bad")
 
     def test_read_failure_is_persisted_as_failure(self) -> None:
         store = FakeStore()

@@ -21,4 +21,4 @@
 uv run --active python -m ok_ww_automator.ok_main
 ```
 
-这可以作为 `ok-wuthering-waves` 中 `python main.py` 的直接替代品，它会在内存配置中追加如 `FastFarmEchoTask` 和 `StaminaTask` 等任务，而无需修改上游源代码。
+这可以作为 `ok-wuthering-waves` 中 `python main.py` 的直接替代品，它会在内存配置中追加如 `FastFarmEchoTask` 和 `FiveToOneTask` 等任务，而无需修改上游源代码。
