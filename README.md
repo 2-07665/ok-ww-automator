@@ -1,79 +1,82 @@
 # ok-ww-automator
 
-CLI automation helpers for Wuthering Waves daily routines, built on top of [ok-script](https://github.com/ok-script/ok-script) and [ok-wuthering-waves](https://github.com/ok-script/ok-wuthering-waves).
+[English](README_en.md) | 简体中文
 
-This project orchestrates game automation by providing remote configuration via Google Sheets, multi-account isolation, precise stamina burn calculations, and robust failure notifications.
+鸣潮日常任务自动化 CLI 辅助工具，并额外提供可注入的自定义 OK 任务，基于 [ok-script](https://github.com/ok-script/ok-script) 和 [ok-wuthering-waves](https://github.com/ok-script/ok-wuthering-waves) 构建。
 
-## Features
+本项目的自动化能力提供基于 Google Sheets 的远程配置、多账号隔离、精确的体力消耗计算以及稳健的错误通知。除此之外，本项目还提供一组独立的自定义 OK 任务，可注入到常规 OK GUI 中使用。
 
-- **Decoupled Orchestration**: Separates scheduling, retry logic, and stamina calculation from the low-level game interaction.
-- **Remote Configuration**: Reads task settings from a Google Sheet, allowing you to update your daily routines without touching the host machine.
-- **Multi-Account Support**: Discovers environment files in the `env/` directory and isolates each account run in its own Python subprocess.
-- **Smart Stamina Management**: Predicts stamina overflow using the Waves API (or OCR fallback) to only launch the game when necessary.
-- **Notices**: Sends detailed execution logs via Mailgun or WxPusher.
+## 特性
 
-## Setup Guide
+- **解耦的编排逻辑**: 将调度、重试逻辑和体力计算与底层的游戏交互彻底分离。
+- **可注入的自定义任务**: 提供一组独立于自动化流程的额外 OK 任务，可注入到常规 OK GUI 中运行。
+- **远程配置**: 从 Google Sheets 读取任务设置，允许您在不触碰主机的情况下更新日常任务配置。
+- **多账号支持**: 自动发现 `env/` 目录下的环境文件，并在独立的 Python 子进程中隔离运行每个账号。
+- **智能体力管理**: 优先使用 Waves API (或 OCR 后备) 预测体力溢出情况，仅在需要时才启动游戏。
+- **消息通知**: 通过 Mailgun 或 WxPusher 发送详细的执行日志。
 
-### 1. Environment and Dependencies
+## 安装指南
 
-Use a single parent virtual environment for both `ok-ww-automator` and `ok-wuthering-waves`. From the parent directory of both projects:
+### 1. 环境与依赖
+
+请为 `ok-ww-automator` 和 `ok-wuthering-waves` 使用同一个父级虚拟环境。在两个项目的父目录中执行：
 
 ```powershell
 uv venv .venv
 .\.venv\Scripts\Activate.ps1
 
-# Install automator with all optional integrations
+# 安装 automator 及其所有可选集成
 cd .\ok-ww-automator
 uv pip install -e ".[sheets,waves,notice]"
 
-# Install upstream game dependencies
+# 安装上游游戏项目的依赖
 cd ..\ok-wuthering-waves
 uv pip install -r requirements.txt
 ```
 
-### 2. Configuration
+### 2. 环境配置
 
-Copy the example environment file to create your default account configuration:
+复制示例环境文件以创建您的默认账号配置：
 
 ```powershell
 cd D:\dev\game\ok-ww\ok-ww-automator
 cp env\.env.example env\.env
 ```
 
-Open `env\.env` and fill in the required variables:
-- `GAME_EXE_PATH`: Path to `Wuthering Waves.exe`.
-- `GOOGLE_SHEET_ID`: Your Google Spreadsheet ID.
-- `GOOGLE_SERVICE_ACCOUNT_JSON_BASE64`: Base64 encoded Google Service Account JSON.
-- Waves API and Notice configurations (optional).
+打开 `env\.env` 并填写所需的变量：
+- `GAME_EXE_PATH`: `Wuthering Waves.exe` 的路径。
+- `GOOGLE_SHEET_ID`: 您的 Google Spreadsheet ID。
+- `GOOGLE_SERVICE_ACCOUNT_JSON_BASE64`: Base64 编码的 Google 服务账号 JSON。
+- Waves API 和通知配置（可选）。
 
-*Note: You can create multiple files (e.g., `cn.env`, `global.env`) in the `env/` directory for multi-account scheduling.*
+*注意：您可以在 `env/` 目录中创建多个文件（例如 `cn.env`, `global.env`）来进行多账号调度。*
 
-### 3. Google Sheets Setup
+### 3. Google Sheets 设置
 
-Create a Google Spreadsheet with the following worksheets:
-- `Config`: Pairwise label/value configuration (see `docs/sheets.md` for exact labels).
-- `DailyRuns`: Log for daily task results.
-- `StaminaRuns`: Log for stamina burn results.
-- `5to1`: Log for echo fast-farm results.
+创建一个包含以下工作表的 Google 表格：
+- `Config`: 成对的标签/值配置 (具体标签请参阅 `docs/sheets_zh.md`)。
+- `DailyRuns`: 日常任务结果日志。
+- `StaminaRuns`: 体力消耗结果日志。
+- `5to1`: 声骸五合一及速刷结果日志。
 
-### 4. Windows Task Scheduler
+### 4. Windows 任务计划程序
 
-XML presets are provided to easily import the automated tasks into Windows Task Scheduler.
+我们提供了 XML 预设，以便轻松将自动化任务导入到 Windows 任务计划程序中。
 
-1. Open **Task Scheduler**.
-2. Click **Import Task...** in the Actions pane.
-3. Import `windows/daily_task.xml` and `windows/stamina_task.xml`.
-4. **Important**: Edit the imported tasks. Under the **Actions** tab, verify the **Command** (path to `.venv\Scripts\python.exe`) and **Working Directory** match your local environment.
+1. 打开 **任务计划程序 (Task Scheduler)**。
+2. 点击操作窗格中的 **导入任务... (Import Task...)**。
+3. 导入 `windows/daily_task.xml` 和 `windows/stamina_task.xml`。
+4. **重要提示**: 编辑导入的任务。在 **操作 (Actions)** 选项卡下，确认 **程序或脚本 (Command)** (`.venv\Scripts\python.exe` 的路径) 和 **起始于 (Working Directory)** 与您的本地环境匹配。
 
-## Manual Usage
+## 手动使用
 
-To launch the normal OK GUI with the extra automator tasks injected:
+如果想启动带有 automator 额外任务注入的常规 OK GUI：
 
 ```powershell
 uv run --active python -m ok_ww_automator.ok_main
 ```
 
-To run the scheduler manually (dry-run):
+手动运行调度器（空跑测试）：
 
 ```powershell
 uv run --active python -m ok_ww_automator.scheduler --mode daily --dry-run
