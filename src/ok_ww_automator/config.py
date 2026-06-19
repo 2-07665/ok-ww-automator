@@ -11,6 +11,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping
+from uuid import UUID
 
 ENV_FILE_ENV = "ENV_FILE"
 DEFAULT_ENV_PATH = Path("env") / ".env"
@@ -78,6 +79,7 @@ class NoticeConfig:
     enabled: bool = False
     channels: tuple[str, ...] = ()
     account_id: str | None = None
+    skip_success: bool = False
     mailgun_api_key: str | None = None
     mailgun_domain: str | None = None
     mailgun_recipient: str | None = None
@@ -104,6 +106,32 @@ class NoticeConfig:
 
 
 @dataclass(frozen=True)
+class HealthchecksConfig:
+    enabled: bool = False
+    daily_uuid: str | None = None
+    stamina_uuid: str | None = None
+
+    def require_uuids(self) -> None:
+        missing = []
+        if not self.daily_uuid:
+            missing.append("HEALTHCHECKS_DAILY_UUID")
+        if not self.stamina_uuid:
+            missing.append("HEALTHCHECKS_STAMINA_UUID")
+        if missing:
+            raise ConfigError(f"Missing Healthchecks config: {', '.join(missing)}")
+        _validate_uuid(self.daily_uuid, "HEALTHCHECKS_DAILY_UUID")
+        _validate_uuid(self.stamina_uuid, "HEALTHCHECKS_STAMINA_UUID")
+
+    def uuid_for_mode(self, mode: str) -> str:
+        self.require_uuids()
+        if mode == "daily":
+            return self.daily_uuid or ""
+        if mode == "stamina":
+            return self.stamina_uuid or ""
+        raise ConfigError(f"Unsupported Healthchecks mode: {mode}")
+
+
+@dataclass(frozen=True)
 class AppConfig:
     project_root: Path
     env_path: Path
@@ -113,6 +141,7 @@ class AppConfig:
     waves_api: WavesApiConfig = field(default_factory=WavesApiConfig)
     retry: RetryConfig = field(default_factory=RetryConfig)
     notice: NoticeConfig = field(default_factory=NoticeConfig)
+    healthchecks: HealthchecksConfig = field(default_factory=HealthchecksConfig)
 
     def require_game_exe_path(self) -> Path:
         if self.game_exe_path is None:
@@ -168,10 +197,16 @@ def load_config(
             enabled=_bool_value(values, "NOTICE_ENABLED", False),
             channels=parse_notice_channels(values.get("NOTICE_CHANNEL")),
             account_id=_blank_to_none(values.get("NOTICE_ACCOUNT_ID")),
+            skip_success=_bool_value(values, "NOTICE_SKIP_SUCCESS", False),
             mailgun_api_key=_blank_to_none(values.get("MAILGUN_API_KEY")),
             mailgun_domain=_blank_to_none(values.get("MAILGUN_DOMAIN")),
             mailgun_recipient=_blank_to_none(values.get("MAILGUN_RECIPIENT")),
             wxpusher_spt=_blank_to_none(values.get("WXPUSHER_SPT")),
+        ),
+        healthchecks=HealthchecksConfig(
+            enabled=_bool_value(values, "HEALTHCHECKS_ENABLED", False),
+            daily_uuid=_blank_to_none(values.get("HEALTHCHECKS_DAILY_UUID")),
+            stamina_uuid=_blank_to_none(values.get("HEALTHCHECKS_STAMINA_UUID")),
         ),
     )
 
@@ -335,3 +370,10 @@ def _csv_values(raw: str | None) -> list[str]:
     if not raw:
         return []
     return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def _validate_uuid(value: str | None, name: str) -> None:
+    try:
+        UUID(value or "")
+    except ValueError as exc:
+        raise ConfigError(f"{name} must be a UUID") from exc

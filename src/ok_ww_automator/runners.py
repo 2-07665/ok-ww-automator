@@ -20,6 +20,7 @@ from .game_clients import (
     SubprocessStaminaGameClient,
     stamina_burn_unit,
 )
+from .healthchecks import HealthcheckMonitor, NullHealthcheckMonitor, healthcheck_monitor_from_config
 from .models import RunResult, SheetRunConfig
 from .notices import NoticeClient, NullNoticeClient, notice_client_from_config, should_notify
 from .sheets import GoogleSheetsStore
@@ -77,24 +78,30 @@ def run_mode(mode: str, context: RunnerContext) -> RunResult:
         game_client = SubprocessDailyGameClient(context.app_config, ww_root=context.ww_root)
         api_client = api_client_from_config(context.app_config)
         notice_client = notice_client_from_config(context.app_config.notice)
+        healthcheck_monitor = healthcheck_monitor_from_config(context.app_config.healthchecks, "daily")
         return DailyRunner(
             store=store,
             game_client=game_client,
             api_client=api_client,
             retry_config=context.app_config.retry,
             notice_client=notice_client,
+            skip_success_notice=context.app_config.notice.skip_success,
+            healthcheck_monitor=healthcheck_monitor,
         ).run()
     if mode == "stamina":
         store = GoogleSheetsStore.from_config(context.app_config.google_sheets)
         game_client = SubprocessStaminaGameClient(context.app_config, ww_root=context.ww_root)
         api_client = api_client_from_config(context.app_config)
         notice_client = notice_client_from_config(context.app_config.notice)
+        healthcheck_monitor = healthcheck_monitor_from_config(context.app_config.healthchecks, "stamina")
         return StaminaRunner(
             store=store,
             game_client=game_client,
             api_client=api_client,
             retry_config=context.app_config.retry,
             notice_client=notice_client,
+            skip_success_notice=context.app_config.notice.skip_success,
+            healthcheck_monitor=healthcheck_monitor,
             daily_hour=context.app_config.daily_run_time.hour,
             daily_minute=context.app_config.daily_run_time.minute,
         ).run()
@@ -117,6 +124,8 @@ class DailyRunner:
         power_controller: PowerController | None = None,
         retry_config: RetryConfig | None = None,
         notice_client: NoticeClient | None = None,
+        skip_success_notice: bool = False,
+        healthcheck_monitor: HealthcheckMonitor | None = None,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self.store = store
@@ -125,6 +134,8 @@ class DailyRunner:
         self.power_controller = power_controller or SystemPowerController()
         self.retry_config = retry_config or RetryConfig()
         self.notice_client = notice_client or NullNoticeClient()
+        self.skip_success_notice = skip_success_notice
+        self.healthcheck_monitor = healthcheck_monitor or NullHealthcheckMonitor()
         self.sleep = sleep
 
     def run(self) -> RunResult:
@@ -136,6 +147,7 @@ class DailyRunner:
             status=RUN_STATUS_RUNNING,
             run_nightmare=sheet_config.run_nightmare,
         )
+        self.start_healthcheck(result)
         if config_error:
             result.decision = f"读取表格配置失败，使用默认配置: {config_error}"
 
@@ -145,15 +157,15 @@ class DailyRunner:
                 apply_daily_skip(result, sheet_config)
                 if sheet_config.skip_daily_once:
                     self.clear_skip_once(result, "daily")
-                return self.persist(result)
+                return self.complete_and_persist(result)
 
             outcome = self.run_daily_with_retries(sheet_config, result)
             apply_daily_outcome(result, outcome)
-            return self.persist(result)
+            return self.complete_and_persist(result)
         except Exception as exc:
             result.status = RUN_STATUS_FAILURE
             result.error = "".join(traceback.format_exception_only(type(exc), exc)).strip()
-            return self.persist(result)
+            return self.complete_and_persist(result)
         finally:
             if self.api_client is not None:
                 self.api_client.close()
@@ -168,6 +180,23 @@ class DailyRunner:
         except Exception as exc:
             append_decision(result, f"写入表格日志失败: {exc}")
         return result
+
+    def complete_and_persist(self, result: RunResult) -> RunResult:
+        result.ensure_ended_at()
+        self.complete_healthcheck(result)
+        return self.persist(result)
+
+    def start_healthcheck(self, result: RunResult) -> None:
+        try:
+            self.healthcheck_monitor.start(result)
+        except Exception as exc:
+            append_decision(result, f"Healthchecks start ping failed: {exc}")
+
+    def complete_healthcheck(self, result: RunResult) -> None:
+        try:
+            self.healthcheck_monitor.complete(result)
+        except Exception as exc:
+            append_decision(result, f"Healthchecks completion ping failed: {exc}")
 
     def clear_skip_once(self, result: RunResult, task_type: str) -> None:
         try:
@@ -206,7 +235,7 @@ class DailyRunner:
         return last_outcome
 
     def notify(self, result: RunResult, sheet_config: SheetRunConfig) -> None:
-        if not should_notify(result):
+        if not should_notify(result, skip_success=self.skip_success_notice):
             return
         try:
             self.notice_client.notify(result, sheet_config)
@@ -224,6 +253,8 @@ class StaminaRunner:
         power_controller: PowerController | None = None,
         retry_config: RetryConfig | None = None,
         notice_client: NoticeClient | None = None,
+        skip_success_notice: bool = False,
+        healthcheck_monitor: HealthcheckMonitor | None = None,
         sleep: Callable[[float], None] = time.sleep,
         daily_hour: int = 5,
         daily_minute: int = 0,
@@ -234,6 +265,8 @@ class StaminaRunner:
         self.power_controller = power_controller or SystemPowerController()
         self.retry_config = retry_config or RetryConfig()
         self.notice_client = notice_client or NullNoticeClient()
+        self.skip_success_notice = skip_success_notice
+        self.healthcheck_monitor = healthcheck_monitor or NullHealthcheckMonitor()
         self.sleep = sleep
         self.daily_hour = daily_hour
         self.daily_minute = daily_minute
@@ -246,6 +279,7 @@ class StaminaRunner:
             ended_at=None,
             status=RUN_STATUS_RUNNING,
         )
+        self.start_healthcheck(result)
         if config_error:
             result.decision = f"读取表格配置失败，使用默认配置: {config_error}"
 
@@ -254,17 +288,17 @@ class StaminaRunner:
                 apply_stamina_skip(result)
                 if sheet_config.skip_stamina_once:
                     self.clear_skip_once(result, "stamina")
-                return self.persist(result)
+                return self.complete_and_persist(result)
 
             outcome, expected_burn, exact_expected = self.run_stamina_with_retries(sheet_config, result)
             if outcome is None:
-                return self.persist(result)
+                return self.complete_and_persist(result)
             apply_stamina_outcome(result, outcome, expected_burn=expected_burn, exact_expected=exact_expected)
-            return self.persist(result)
+            return self.complete_and_persist(result)
         except Exception as exc:
             result.status = RUN_STATUS_FAILURE
             result.error = "".join(traceback.format_exception_only(type(exc), exc)).strip()
-            return self.persist(result)
+            return self.complete_and_persist(result)
         finally:
             if self.api_client is not None:
                 self.api_client.close()
@@ -280,6 +314,23 @@ class StaminaRunner:
         except Exception as exc:
             append_decision(result, f"写入表格日志失败: {exc}")
         return result
+
+    def complete_and_persist(self, result: RunResult) -> RunResult:
+        result.ensure_ended_at()
+        self.complete_healthcheck(result)
+        return self.persist(result)
+
+    def start_healthcheck(self, result: RunResult) -> None:
+        try:
+            self.healthcheck_monitor.start(result)
+        except Exception as exc:
+            append_decision(result, f"Healthchecks start ping failed: {exc}")
+
+    def complete_healthcheck(self, result: RunResult) -> None:
+        try:
+            self.healthcheck_monitor.complete(result)
+        except Exception as exc:
+            append_decision(result, f"Healthchecks completion ping failed: {exc}")
 
     def clear_skip_once(self, result: RunResult, task_type: str) -> None:
         try:
@@ -340,7 +391,7 @@ class StaminaRunner:
         return last_outcome, expected_burn, exact_expected
 
     def notify(self, result: RunResult, sheet_config: SheetRunConfig) -> None:
-        if not should_notify(result):
+        if not should_notify(result, skip_success=self.skip_success_notice):
             return
         try:
             self.notice_client.notify(result, sheet_config)

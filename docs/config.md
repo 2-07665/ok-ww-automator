@@ -17,6 +17,7 @@ The configuration module is designed to fail lazily. Secrets and credentials are
 - **Google Sheets**: `GOOGLE_SHEET_ID` and `GOOGLE_SERVICE_ACCOUNT_JSON_BASE64` are required to read or append to sheets. Requires the `[sheets]` install extra.
 - **Waves API**: `WAVES_ROLE_ID`, `WAVES_TOKEN`, and `WAVES_DID` are required if `WAVES_API_ENABLED=true`. Requires the `[waves]` install extra.
 - **Notices**: `NOTICE_CHANNEL` specific secrets (like `MAILGUN_API_KEY` or `WXPUSHER_SPT`) are required if `NOTICE_ENABLED=true`. Requires the `[notice]` install extra.
+- **Healthchecks.io**: `HEALTHCHECKS_DAILY_UUID` and `HEALTHCHECKS_STAMINA_UUID` are required if `HEALTHCHECKS_ENABLED=true`.
 
 ## Environment Variables
 
@@ -41,9 +42,13 @@ The configuration module is designed to fail lazily. Secrets and credentials are
 | `NOTICE_ENABLED` | `false` | Enable post-run notifications. |
 | `NOTICE_CHANNEL` | *unset* | Comma-separated list of channels (`mailgun`, `wxpusher`). |
 | `NOTICE_ACCOUNT_ID` | *unset* | Display label prefixed to notice subjects. |
+| `NOTICE_SKIP_SUCCESS` | `false` | Suppress notifications when the final task result is `success`. |
 | `MAILGUN_API_KEY` | *unset* | Mailgun API key. |
 | `MAILGUN_DOMAIN` | *unset* | Mailgun sending domain. |
 | `MAILGUN_RECIPIENT` | *unset* | Target email address for notices. |
 | `WXPUSHER_SPT` | *unset* | WxPusher simple-push token. |
+| `HEALTHCHECKS_ENABLED` | `false` | Enable Healthchecks.io pings for scheduled runs. |
+| `HEALTHCHECKS_DAILY_UUID` | *unset* | Healthchecks.io check UUID for the daily task. |
+| `HEALTHCHECKS_STAMINA_UUID` | *unset* | Healthchecks.io check UUID for the stamina task. |
 
 *(Note: Boolean variables accept `true`, `1`, `yes`, `on`, `是` and their negative counterparts.)*

@@ -139,6 +139,23 @@ class FakeNoticeClient:
             raise self.exc
 
 
+class FakeHealthcheckMonitor:
+    def __init__(self, *, start_exc=None, complete_exc=None) -> None:
+        self.start_exc = start_exc
+        self.complete_exc = complete_exc
+        self.calls = []
+
+    def start(self, result: RunResult) -> None:
+        self.calls.append(("start", result.status))
+        if self.start_exc is not None:
+            raise self.start_exc
+
+    def complete(self, result: RunResult) -> None:
+        self.calls.append(("complete", result.status))
+        if self.complete_exc is not None:
+            raise self.complete_exc
+
+
 class DailyRunnerTest(unittest.TestCase):
     def test_skip_daily_once_clears_flag_and_persists_skipped_result(self) -> None:
         store = FakeStore(SheetRunConfig(skip_daily_once=True, run_nightmare=True))
@@ -310,6 +327,45 @@ class DailyRunnerTest(unittest.TestCase):
 
         self.assertEqual(result.status, "failure")
         self.assertEqual(notice.calls, [(result, store.sheet_config)])
+
+    def test_daily_success_notice_can_be_skipped(self) -> None:
+        store = FakeStore()
+        game = FakeGameClient(DailyGameOutcome(daily_points=100))
+        notice = FakeNoticeClient()
+
+        with patch("ok_ww_automator.runners.now", return_value=FIXED_NOW):
+            result = DailyRunner(
+                store=store,
+                game_client=game,
+                notice_client=notice,
+                skip_success_notice=True,
+            ).run()
+
+        self.assertEqual(result.status, "success")
+        self.assertEqual(notice.calls, [])
+
+    def test_daily_healthcheck_pings_start_and_completion(self) -> None:
+        store = FakeStore()
+        game = FakeGameClient(DailyGameOutcome(daily_points=100))
+        healthcheck = FakeHealthcheckMonitor()
+
+        with patch("ok_ww_automator.runners.now", return_value=FIXED_NOW):
+            result = DailyRunner(store=store, game_client=game, healthcheck_monitor=healthcheck).run()
+
+        self.assertEqual(result.status, "success")
+        self.assertEqual(healthcheck.calls, [("start", "running"), ("complete", "success")])
+
+    def test_daily_healthcheck_failure_is_recorded_without_failing_task(self) -> None:
+        store = FakeStore()
+        game = FakeGameClient(DailyGameOutcome(daily_points=100))
+        healthcheck = FakeHealthcheckMonitor(complete_exc=RuntimeError("hc down"))
+
+        with patch("ok_ww_automator.runners.now", return_value=FIXED_NOW):
+            result = DailyRunner(store=store, game_client=game, healthcheck_monitor=healthcheck).run()
+
+        self.assertEqual(result.status, "success")
+        self.assertIn("Healthchecks completion ping failed: hc down", result.decision)
+        self.assertEqual(store.daily_results, [result])
 
 
 class StaminaRunnerTest(unittest.TestCase):
@@ -545,7 +601,7 @@ class StaminaRunnerTest(unittest.TestCase):
         self.assertEqual(sleeps, [3])
         self.assertIn("已触发重试", result.decision)
 
-    def test_stamina_notice_sends_expected_skip_until_healthchecks_exist(self) -> None:
+    def test_stamina_notice_sends_expected_skip(self) -> None:
         store = FakeStore()
         game = FakeStaminaGameClient(stamina=(100, 0))
         notice = FakeNoticeClient()
@@ -562,6 +618,27 @@ class StaminaRunnerTest(unittest.TestCase):
 
         self.assertEqual(result.status, "skipped")
         self.assertEqual(notice.calls, [(result, store.sheet_config)])
+
+    def test_stamina_healthcheck_pings_failure_for_needs_review(self) -> None:
+        store = FakeStore()
+        game = FakeStaminaGameClient(
+            stamina=(180, 0),
+            outcome=StaminaGameOutcome(stamina_left=0, backup_stamina_left=0),
+        )
+        healthcheck = FakeHealthcheckMonitor()
+        start = dt.datetime(2026, 5, 15, 22, 0, tzinfo=BEIJING_TZ)
+
+        with patch("ok_ww_automator.runners.now", return_value=start):
+            result = StaminaRunner(
+                store=store,
+                game_client=game,
+                healthcheck_monitor=healthcheck,
+                daily_hour=5,
+                daily_minute=0,
+            ).run()
+
+        self.assertEqual(result.status, "needs review")
+        self.assertEqual(healthcheck.calls, [("start", "running"), ("complete", "needs review")])
 
 
 if __name__ == "__main__":

@@ -132,8 +132,13 @@ def notice_client_from_config(config: NoticeConfig) -> NoticeClient:
     return CompositeNoticeClient(clients)
 
 
-def should_notify(result: RunResult) -> bool:
-    return result.status.strip().lower() not in NO_NOTICE_STATUSES
+def should_notify(result: RunResult, *, skip_success: bool = False) -> bool:
+    normalized_status = result.status.strip().lower()
+    if normalized_status in NO_NOTICE_STATUSES:
+        return False
+    if skip_success and normalized_status == "success":
+        return False
+    return True
 
 
 def build_notice_message(

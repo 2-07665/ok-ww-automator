@@ -39,7 +39,7 @@ class FakeSession:
 
 
 class NoticesTest(unittest.TestCase):
-    def test_should_notify_all_final_statuses_until_healthchecks_exist(self) -> None:
+    def test_should_notify_all_final_statuses_by_default(self) -> None:
         base = dt.datetime(2026, 5, 16, 5, 0, tzinfo=BEIJING_TZ)
 
         self.assertTrue(should_notify(RunResult("daily", base, base, "failure")))
@@ -47,6 +47,12 @@ class NoticesTest(unittest.TestCase):
         self.assertTrue(should_notify(RunResult("daily", base, base, "success")))
         self.assertTrue(should_notify(RunResult("daily", base, base, "skipped")))
         self.assertFalse(should_notify(RunResult("daily", base, None, "running")))
+
+    def test_should_notify_can_skip_success(self) -> None:
+        base = dt.datetime(2026, 5, 16, 5, 0, tzinfo=BEIJING_TZ)
+
+        self.assertFalse(should_notify(RunResult("daily", base, base, "success"), skip_success=True))
+        self.assertTrue(should_notify(RunResult("daily", base, base, "needs review"), skip_success=True))
 
     def test_build_notice_message_includes_problem_context(self) -> None:
         base = dt.datetime(2026, 5, 16, 5, 0, tzinfo=BEIJING_TZ)

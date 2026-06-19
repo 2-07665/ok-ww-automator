@@ -17,6 +17,7 @@
 - **Google Sheets**: 读取或追加数据到表格需要 `GOOGLE_SHEET_ID` 和 `GOOGLE_SERVICE_ACCOUNT_JSON_BASE64`。需要安装 `[sheets]` 额外依赖。
 - **Waves API**: 如果 `WAVES_API_ENABLED=true`，则需要 `WAVES_ROLE_ID`, `WAVES_TOKEN` 和 `WAVES_DID`。需要安装 `[waves]` 额外依赖。
 - **消息通知**: 如果 `NOTICE_ENABLED=true`，则需要特定于 `NOTICE_CHANNEL` 的密钥（如 `MAILGUN_API_KEY` 或 `WXPUSHER_SPT`）。需要安装 `[notice]` 额外依赖。
+- **Healthchecks.io**: 如果 `HEALTHCHECKS_ENABLED=true`，则需要 `HEALTHCHECKS_DAILY_UUID` 和 `HEALTHCHECKS_STAMINA_UUID`。
 
 ## 环境变量
 
@@ -41,9 +42,13 @@
 | `NOTICE_ENABLED` | `false` | 启用运行后通知。 |
 | `NOTICE_CHANNEL` | *未设置* | 逗号分隔的通知渠道列表 (`mailgun`, `wxpusher`)。 |
 | `NOTICE_ACCOUNT_ID` | *未设置* | 通知主题前缀的显示标签。 |
+| `NOTICE_SKIP_SUCCESS` | `false` | 当最终任务结果为 `success` 时跳过通知。 |
 | `MAILGUN_API_KEY` | *未设置* | Mailgun API 密钥。 |
 | `MAILGUN_DOMAIN` | *未设置* | Mailgun 发送域名。 |
 | `MAILGUN_RECIPIENT` | *未设置* | 接收通知的目标邮箱地址。 |
 | `WXPUSHER_SPT` | *未设置* | WxPusher simple-push token。 |
+| `HEALTHCHECKS_ENABLED` | `false` | 启用 Healthchecks.io 运行监控 ping。 |
+| `HEALTHCHECKS_DAILY_UUID` | *未设置* | 日常任务的 Healthchecks.io check UUID。 |
+| `HEALTHCHECKS_STAMINA_UUID` | *未设置* | 体力任务的 Healthchecks.io check UUID。 |
 
 *(注意：布尔变量接受 `true`, `1`, `yes`, `on`, `是` 及其对应的否定值。)*

@@ -38,6 +38,8 @@ class ConfigTest(unittest.TestCase):
         self.assertFalse(config.waves_api.enabled)
         self.assertFalse(config.notice.enabled)
         self.assertEqual(config.notice.channels, ())
+        self.assertFalse(config.notice.skip_success)
+        self.assertFalse(config.healthchecks.enabled)
 
     def test_load_config_reads_dotenv_and_keeps_env_override(self) -> None:
         env_dir = self.tmp / "env"
@@ -54,6 +56,10 @@ class ConfigTest(unittest.TestCase):
                     "WAVES_API_ENABLED=true",
                     "NOTICE_CHANNEL=mailgun,wx,mailgun",
                     "NOTICE_ACCOUNT_ID=global",
+                    "NOTICE_SKIP_SUCCESS=true",
+                    "HEALTHCHECKS_ENABLED=true",
+                    "HEALTHCHECKS_DAILY_UUID=123e4567-e89b-12d3-a456-426614174000",
+                    "HEALTHCHECKS_STAMINA_UUID=123e4567-e89b-12d3-a456-426614174001",
                     "SHEET_NAME_FASTFARM=FastFarmRuns",
                 ]
             ),
@@ -70,6 +76,10 @@ class ConfigTest(unittest.TestCase):
         self.assertTrue(config.waves_api.enabled)
         self.assertEqual(config.notice.channels, ("mailgun", "wxpusher"))
         self.assertEqual(config.notice.account_id, "global")
+        self.assertTrue(config.notice.skip_success)
+        self.assertTrue(config.healthchecks.enabled)
+        self.assertEqual(config.healthchecks.uuid_for_mode("daily"), "123e4567-e89b-12d3-a456-426614174000")
+        self.assertEqual(config.healthchecks.uuid_for_mode("stamina"), "123e4567-e89b-12d3-a456-426614174001")
         self.assertEqual(config.google_sheets.fast_farm_runs_sheet, "FastFarmRuns")
 
     def test_env_file_resolution_prefers_env_folder_for_bare_filename(self) -> None:
@@ -138,6 +148,21 @@ class ConfigTest(unittest.TestCase):
             config.waves_api.require_credentials()
         with self.assertRaisesRegex(ConfigError, "MAILGUN_API_KEY"):
             config.notice.require_channel_credentials("mailgun")
+        with self.assertRaisesRegex(ConfigError, "HEALTHCHECKS_DAILY_UUID"):
+            config.healthchecks.require_uuids()
+
+    def test_healthchecks_rejects_invalid_uuid(self) -> None:
+        config = load_config(
+            env={
+                "HEALTHCHECKS_ENABLED": "true",
+                "HEALTHCHECKS_DAILY_UUID": "not-a-uuid",
+                "HEALTHCHECKS_STAMINA_UUID": "123e4567-e89b-12d3-a456-426614174001",
+            },
+            project_root=self.tmp,
+        )
+
+        with self.assertRaisesRegex(ConfigError, "HEALTHCHECKS_DAILY_UUID must be a UUID"):
+            config.healthchecks.require_uuids()
 
 
 if __name__ == "__main__":
