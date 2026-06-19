@@ -144,7 +144,7 @@ class DailyRunner:
             if should_skip_daily(sheet_config):
                 apply_daily_skip(result, sheet_config)
                 if sheet_config.skip_daily_once:
-                    self.store.clear_skip_once("daily")
+                    self.clear_skip_once(result, "daily")
                 return self.persist(result)
 
             outcome = self.run_daily_with_retries(sheet_config, result)
@@ -163,8 +163,18 @@ class DailyRunner:
 
     def persist(self, result: RunResult) -> RunResult:
         result.ensure_ended_at()
-        self.store.append_daily_result(result)
+        try:
+            self.store.append_daily_result(result)
+        except Exception as exc:
+            append_decision(result, f"写入表格日志失败: {exc}")
         return result
+
+    def clear_skip_once(self, result: RunResult, task_type: str) -> None:
+        try:
+            self.store.clear_skip_once(task_type)
+        except Exception as exc:
+            result.status = RUN_STATUS_NEEDS_REVIEW
+            append_decision(result, f"清除跳过一次标记失败: {exc}")
 
     def fill_from_api(self, result: RunResult) -> None:
         if self.api_client is None:
@@ -243,7 +253,7 @@ class StaminaRunner:
             if should_skip_stamina(sheet_config):
                 apply_stamina_skip(result)
                 if sheet_config.skip_stamina_once:
-                    self.store.clear_skip_once("stamina")
+                    self.clear_skip_once(result, "stamina")
                 return self.persist(result)
 
             outcome, expected_burn, exact_expected = self.run_stamina_with_retries(sheet_config, result)
@@ -265,8 +275,18 @@ class StaminaRunner:
 
     def persist(self, result: RunResult) -> RunResult:
         result.ensure_ended_at()
-        self.store.append_stamina_result(result)
+        try:
+            self.store.append_stamina_result(result)
+        except Exception as exc:
+            append_decision(result, f"写入表格日志失败: {exc}")
         return result
+
+    def clear_skip_once(self, result: RunResult, task_type: str) -> None:
+        try:
+            self.store.clear_skip_once(task_type)
+        except Exception as exc:
+            result.status = RUN_STATUS_NEEDS_REVIEW
+            append_decision(result, f"清除跳过一次标记失败: {exc}")
 
     def read_stamina(self, sheet_config: SheetRunConfig) -> tuple[int | None, int | None]:
         if self.api_client is not None:

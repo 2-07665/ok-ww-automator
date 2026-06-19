@@ -24,9 +24,12 @@ FIXED_NOW = dt.datetime(2026, 5, 16, 5, 0, tzinfo=BEIJING_TZ)
 
 
 class FakeStore:
-    def __init__(self, sheet_config=None, error=None) -> None:
+    def __init__(self, sheet_config=None, error=None, clear_exc=None, daily_append_exc=None, stamina_append_exc=None) -> None:
         self.sheet_config = sheet_config or SheetRunConfig()
         self.error = error
+        self.clear_exc = clear_exc
+        self.daily_append_exc = daily_append_exc
+        self.stamina_append_exc = stamina_append_exc
         self.cleared = []
         self.daily_results = []
         self.stamina_results = []
@@ -35,13 +38,19 @@ class FakeStore:
         return self.sheet_config, self.error
 
     def clear_skip_once(self, task_type: str) -> bool:
+        if self.clear_exc is not None:
+            raise self.clear_exc
         self.cleared.append(task_type)
         return True
 
     def append_daily_result(self, result: RunResult) -> None:
+        if self.daily_append_exc is not None:
+            raise self.daily_append_exc
         self.daily_results.append(result)
 
     def append_stamina_result(self, result: RunResult) -> None:
+        if self.stamina_append_exc is not None:
+            raise self.stamina_append_exc
         self.stamina_results.append(result)
 
 
@@ -174,6 +183,30 @@ class DailyRunnerTest(unittest.TestCase):
         self.assertEqual(result.stamina_used, 180)
         self.assertEqual(result.daily_points, 100)
         self.assertEqual(result.stamina_left, 20)
+        self.assertEqual(store.daily_results, [result])
+
+    def test_daily_append_failure_does_not_turn_success_into_failure(self) -> None:
+        store = FakeStore(daily_append_exc=RuntimeError("sheet unavailable"))
+        game = FakeGameClient(DailyGameOutcome(daily_points=100))
+
+        with patch("ok_ww_automator.runners.now", return_value=FIXED_NOW):
+            result = DailyRunner(store=store, game_client=game).run()
+
+        self.assertEqual(result.status, "success")
+        self.assertIsNone(result.error)
+        self.assertIn("写入表格日志失败: sheet unavailable", result.decision)
+        self.assertEqual(store.daily_results, [])
+
+    def test_daily_clear_skip_once_failure_marks_task_needs_review(self) -> None:
+        store = FakeStore(SheetRunConfig(skip_daily_once=True), clear_exc=RuntimeError("sheet unavailable"))
+        game = FakeGameClient()
+
+        with patch("ok_ww_automator.runners.now", return_value=FIXED_NOW):
+            result = DailyRunner(store=store, game_client=game).run()
+
+        self.assertEqual(result.status, "needs review")
+        self.assertIn("清除跳过一次标记失败: sheet unavailable", result.decision)
+        self.assertEqual(store.cleared, [])
         self.assertEqual(store.daily_results, [result])
 
     def test_daily_shutdown_config_requests_shutdown_after_persist(self) -> None:
@@ -365,6 +398,40 @@ class StaminaRunnerTest(unittest.TestCase):
         self.assertEqual(result.status, "success")
         self.assertEqual(result.stamina_used, 60)
         self.assertEqual(game.run_configs, [store.sheet_config])
+        self.assertEqual(store.stamina_results, [result])
+
+    def test_stamina_append_failure_does_not_turn_success_into_failure(self) -> None:
+        store = FakeStore(stamina_append_exc=RuntimeError("sheet unavailable"))
+        game = FakeStaminaGameClient(
+            stamina=(60, 0),
+            outcome=StaminaGameOutcome(stamina_left=0, backup_stamina_left=0),
+        )
+        start = dt.datetime(2026, 5, 15, 9, 0, tzinfo=BEIJING_TZ)
+
+        with patch("ok_ww_automator.runners.now", return_value=start):
+            result = StaminaRunner(
+                store=store,
+                game_client=game,
+                retry_config=RetryConfig(max_attempts=1, delay_seconds=0),
+                daily_hour=5,
+                daily_minute=0,
+            ).run()
+
+        self.assertEqual(result.status, "success")
+        self.assertIsNone(result.error)
+        self.assertIn("写入表格日志失败: sheet unavailable", result.decision)
+        self.assertEqual(store.stamina_results, [])
+
+    def test_stamina_clear_skip_once_failure_marks_task_needs_review(self) -> None:
+        store = FakeStore(SheetRunConfig(skip_stamina_once=True), clear_exc=RuntimeError("sheet unavailable"))
+        game = FakeStaminaGameClient()
+
+        with patch("ok_ww_automator.runners.now", return_value=FIXED_NOW):
+            result = StaminaRunner(store=store, game_client=game).run()
+
+        self.assertEqual(result.status, "needs review")
+        self.assertIn("清除跳过一次标记失败: sheet unavailable", result.decision)
+        self.assertEqual(store.cleared, [])
         self.assertEqual(store.stamina_results, [result])
 
     def test_stamina_shutdown_config_requests_shutdown_after_close(self) -> None:
