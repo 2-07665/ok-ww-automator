@@ -15,6 +15,7 @@ from ok_ww_automator.game_clients import (
     SubprocessStaminaGameClient,
     WINDOWS_ACCESS_VIOLATION_EXIT_CODE,
     apply_daily_task_config,
+    read_live_daily_points,
     simulation_material_value,
     stamina_burn_unit,
 )
@@ -24,6 +25,33 @@ class FakeDailyTask:
     def __init__(self) -> None:
         self.config = {}
         self.support_tasks = ["Tacet", "Forgery", "Simulation"]
+
+
+class FakeDailyPointsTask:
+    def __init__(self, points=0, *, open_exc: Exception | None = None) -> None:
+        if isinstance(points, list):
+            self.points_by_attempt = points.copy()
+        else:
+            self.points_by_attempt = [points]
+        self.open_exc = open_exc
+        self.current_points = 0
+        self.open_count = 0
+        self.ensure_count = 0
+
+    def ensure_main(self, **kwargs) -> None:
+        self.ensure_count += 1
+
+    def open_daily(self) -> None:
+        self.open_count += 1
+        if self.open_exc is not None:
+            raise self.open_exc
+        if self.points_by_attempt:
+            self.current_points = self.points_by_attempt.pop(0)
+
+    def info_get(self, key, default=None):
+        if key == "total daily points":
+            return self.current_points
+        return default
 
 
 class FakeDeviceManager:
@@ -100,6 +128,30 @@ class GameClientsTest(unittest.TestCase):
     def test_stamina_burn_unit_depends_on_farm_type(self) -> None:
         self.assertEqual(stamina_burn_unit(SheetRunConfig(which_to_farm="无音区")), 60)
         self.assertEqual(stamina_burn_unit(SheetRunConfig(which_to_farm="凝素领域")), 40)
+
+    def test_read_live_daily_points_returns_first_reading(self) -> None:
+        task = FakeDailyPointsTask([0, 100])
+
+        points = read_live_daily_points(task, retries=3, retry_sleep=0)
+
+        self.assertEqual(points, 0)
+        self.assertEqual(task.open_count, 1)
+
+    def test_read_live_daily_points_retries_until_first_valid_reading(self) -> None:
+        task = FakeDailyPointsTask(["bad", 80, 100])
+
+        points = read_live_daily_points(task, retries=3, retry_sleep=0)
+
+        self.assertEqual(points, 80)
+        self.assertEqual(task.open_count, 2)
+
+    def test_read_live_daily_points_returns_none_when_all_reads_fail(self) -> None:
+        task = FakeDailyPointsTask(open_exc=RuntimeError("daily page failed"))
+
+        points = read_live_daily_points(task, retries=3, retry_sleep=0)
+
+        self.assertIsNone(points)
+        self.assertEqual(task.open_count, 3)
 
 
 class OkStaminaGameClientTest(unittest.TestCase):

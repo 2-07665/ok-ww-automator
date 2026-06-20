@@ -68,7 +68,7 @@ class OkDailyGameClient:
                 apply_daily_task_config(sheet_config, daily_task)
                 stamina_start, backup_start = read_live_stamina(daily_task)
                 task_error = run_onetime_task(ok.task_executor, daily_task, timeout_seconds=1800)
-                daily_points = daily_task.info_get("total daily points", 0)
+                daily_points = read_live_daily_points(daily_task)
                 stamina_left, backup_left = read_live_stamina(daily_task)
                 return DailyGameOutcome(
                     stamina_start=stamina_start,
@@ -318,3 +318,31 @@ def read_live_stamina(task, *, retries: int = 3, retry_sleep: float = 10.0) -> t
     if last_exc is not None:
         return None, None
     return None, None
+
+
+def read_live_daily_points(task, *, retries: int = 3, retry_sleep: float = 10.0) -> int | None:
+    for attempt in range(1, retries + 1):
+        try:
+            task.ensure_main(esc=True, time_out=20)
+            task.open_daily()
+            points = coerce_int(task.info_get("total daily points", 0))
+            if points is not None:
+                return points
+        except Exception:
+            pass
+        finally:
+            task.ensure_main(esc=True, time_out=20)
+
+        if attempt < retries:
+            import time
+
+            time.sleep(retry_sleep)
+
+    return None
+
+
+def coerce_int(value: object) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
