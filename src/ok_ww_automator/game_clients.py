@@ -272,6 +272,8 @@ def apply_daily_task_config(sheet_config: SheetRunConfig, daily_task) -> None:
     daily_task.config["Material Selection"] = simulation_material_value(sheet_config.simulation_material)
     daily_task.config["Auto Farm all Nightmare Nest"] = sheet_config.run_nightmare
     daily_task.config["Farm Nightmare Nest for Daily Echo"] = True
+    daily_task.config["Check Weekly Garden"] = False
+    daily_task.config["Continue Farm After Daily"]: True
 
 
 def farm_type_index(which_to_farm: str) -> int:
