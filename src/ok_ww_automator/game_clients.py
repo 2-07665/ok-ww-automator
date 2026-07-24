@@ -27,6 +27,22 @@ AUTO_FARM_NIGHTMARE_NEST = "Auto Farm all Nightmare Nest"
 NIGHTMARE_FARM_SELECTION = "Which to Farm"
 NIGHTMARE_PURIFICATION = "Nightmare Purification"
 TACET_DISCORD_NEST = "Tacet Discord Nest"
+BENIGN_DAILY_TASK_ERRORS = frozenset(
+    {
+        "can not battle pass, maybe ended",
+    }
+)
+
+
+def normalize_daily_task_error(task_error: str | None) -> str | None:
+    """Discard upstream DailyTask errors that describe optional work being unavailable."""
+    if not task_error:
+        return None
+    task_error = task_error.strip()
+    error_message = task_error.split(": ", 1)[-1]
+    if error_message in BENIGN_DAILY_TASK_ERRORS:
+        return None
+    return task_error or None
 
 
 @dataclass(frozen=True)
@@ -76,7 +92,9 @@ class OkDailyGameClient:
                     raise RuntimeError("DailyTask or NightmareNestTask is not registered")
                 apply_daily_task_config(sheet_config, daily_task, nightmare_task)
                 stamina_start, backup_start = read_live_stamina(daily_task)
-                task_error = run_onetime_task(ok.task_executor, daily_task, timeout_seconds=1800)
+                task_error = normalize_daily_task_error(
+                    run_onetime_task(ok.task_executor, daily_task, timeout_seconds=1800)
+                )
                 daily_points = read_live_daily_points(daily_task)
                 stamina_left, backup_left = read_live_stamina(daily_task)
                 return DailyGameOutcome(

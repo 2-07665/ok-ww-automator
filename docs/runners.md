@@ -16,6 +16,7 @@ While `scheduler.py` is responsible for account discovery and multiprocessing, t
 - Attempts sign-in and fetches initial metrics via the optional Waves API.
 - Clears the skip-once flag if consumed.
 - Delegates to the `DailyGameClient` to execute the game task.
+- Ignores known non-fatal upstream DailyTask messages, such as an unavailable or ended battle pass, while preserving genuine task errors.
 - Orchestrates retry loops for transient game crashes.
 - Persists the final outcome to the `DailyRuns` worksheet.
 - Dispatches execution notifications.

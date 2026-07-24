@@ -19,6 +19,7 @@ from ok_ww_automator.game_clients import (
     SubprocessStaminaGameClient,
     WINDOWS_ACCESS_VIOLATION_EXIT_CODE,
     apply_daily_task_config,
+    normalize_daily_task_error,
     read_live_daily_points,
     simulation_material_value,
     stamina_burn_unit,
@@ -112,6 +113,17 @@ class FakeLauncher:
 
 
 class GameClientsTest(unittest.TestCase):
+    def test_battle_pass_ended_is_not_a_daily_task_error(self) -> None:
+        self.assertIsNone(
+            normalize_daily_task_error("Daily Task: can not battle pass, maybe ended")
+        )
+
+    def test_other_daily_task_errors_are_preserved(self) -> None:
+        self.assertEqual(
+            normalize_daily_task_error("Daily Task: NightmareNestTask Failed"),
+            "Daily Task: NightmareNestTask Failed",
+        )
+
     def test_apply_daily_task_config_maps_sheet_values(self) -> None:
         task = FakeDailyTask()
         nightmare_task = FakeNightmareTask()
