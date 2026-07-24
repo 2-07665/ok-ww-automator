@@ -202,6 +202,21 @@ class DailyRunnerTest(unittest.TestCase):
         self.assertEqual(result.stamina_left, 20)
         self.assertEqual(store.daily_results, [result])
 
+    def test_daily_reports_nightmare_disabled_when_no_targets_are_selected(self) -> None:
+        config = SheetRunConfig(
+            run_nightmare=True,
+            farm_nightmare_purification=False,
+            farm_tacet_discord_nest=False,
+        )
+        store = FakeStore(config)
+        game = FakeGameClient(DailyGameOutcome(daily_points=100))
+
+        with patch("ok_ww_automator.runners.now", return_value=FIXED_NOW):
+            result = DailyRunner(store=store, game_client=game).run()
+
+        self.assertEqual(result.status, "success")
+        self.assertFalse(result.run_nightmare)
+
     def test_daily_append_failure_does_not_turn_success_into_failure(self) -> None:
         store = FakeStore(daily_append_exc=RuntimeError("sheet unavailable"))
         game = FakeGameClient(DailyGameOutcome(daily_points=100))

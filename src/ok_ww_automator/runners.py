@@ -145,7 +145,7 @@ class DailyRunner:
             started_at=now(),
             ended_at=None,
             status=RUN_STATUS_RUNNING,
-            run_nightmare=sheet_config.run_nightmare,
+            run_nightmare=sheet_config.should_run_nightmare,
         )
         self.start_healthcheck(result)
         if config_error:

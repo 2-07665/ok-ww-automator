@@ -10,6 +10,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from ok_ww_automator.config import AppConfig
 from ok_ww_automator.models import SheetRunConfig
 from ok_ww_automator.game_clients import (
+    AUTO_FARM_NIGHTMARE_NEST,
+    DAILY_ADDITIONAL_TASKS,
+    NIGHTMARE_FARM_SELECTION,
+    NIGHTMARE_PURIFICATION,
     OkStaminaGameClient,
     SubprocessDailyGameClient,
     SubprocessStaminaGameClient,
@@ -25,6 +29,11 @@ class FakeDailyTask:
     def __init__(self) -> None:
         self.config = {}
         self.support_tasks = ["Tacet", "Forgery", "Simulation"]
+
+
+class FakeNightmareTask:
+    def __init__(self) -> None:
+        self.config = {}
 
 
 class FakeDailyPointsTask:
@@ -105,22 +114,64 @@ class FakeLauncher:
 class GameClientsTest(unittest.TestCase):
     def test_apply_daily_task_config_maps_sheet_values(self) -> None:
         task = FakeDailyTask()
+        nightmare_task = FakeNightmareTask()
         config = SheetRunConfig(
             which_to_farm="凝素领域",
             tacet_serial=3,
             forgery_serial=2,
             simulation_material="武器经验",
             run_nightmare=True,
+            farm_nightmare_purification=True,
+            farm_tacet_discord_nest=False,
         )
 
-        apply_daily_task_config(config, task)
+        apply_daily_task_config(config, task, nightmare_task)
 
         self.assertEqual(task.config["Which to Farm"], "Forgery")
         self.assertEqual(task.config["Which Tacet Suppression to Farm"], 3)
         self.assertEqual(task.config["Which Forgery Challenge to Farm"], 2)
         self.assertEqual(task.config["Material Selection"], "Weapon EXP")
-        self.assertTrue(task.config["Auto Farm all Nightmare Nest"])
         self.assertTrue(task.config["Farm Nightmare Nest for Daily Echo"])
+        self.assertEqual(task.config[DAILY_ADDITIONAL_TASKS], [AUTO_FARM_NIGHTMARE_NEST])
+        self.assertNotIn("Check Weekly Garden", task.config[DAILY_ADDITIONAL_TASKS])
+        self.assertEqual(nightmare_task.config[NIGHTMARE_FARM_SELECTION], [NIGHTMARE_PURIFICATION])
+
+    def test_apply_daily_task_config_disables_all_additional_tasks(self) -> None:
+        task = FakeDailyTask()
+        nightmare_task = FakeNightmareTask()
+
+        apply_daily_task_config(SheetRunConfig(run_nightmare=False), task, nightmare_task)
+
+        self.assertEqual(task.config[DAILY_ADDITIONAL_TASKS], [])
+
+    def test_apply_daily_task_config_treats_enabled_nightmare_without_targets_as_disabled(self) -> None:
+        task = FakeDailyTask()
+        nightmare_task = FakeNightmareTask()
+        config = SheetRunConfig(
+            run_nightmare=True,
+            farm_nightmare_purification=False,
+            farm_tacet_discord_nest=False,
+        )
+
+        apply_daily_task_config(config, task, nightmare_task)
+
+        self.assertEqual(task.config[DAILY_ADDITIONAL_TASKS], [])
+        self.assertFalse(task.config["Farm Nightmare Nest for Daily Echo"])
+        self.assertEqual(nightmare_task.config[NIGHTMARE_FARM_SELECTION], [])
+
+    def test_apply_daily_task_config_disables_daily_echo_nightmare_without_targets(self) -> None:
+        task = FakeDailyTask()
+        nightmare_task = FakeNightmareTask()
+        config = SheetRunConfig(
+            run_nightmare=False,
+            farm_nightmare_purification=False,
+            farm_tacet_discord_nest=False,
+        )
+
+        apply_daily_task_config(config, task, nightmare_task)
+
+        self.assertFalse(task.config["Farm Nightmare Nest for Daily Echo"])
+        self.assertEqual(nightmare_task.config[NIGHTMARE_FARM_SELECTION], [])
 
     def test_unknown_simulation_material_defaults_to_shell_credit(self) -> None:
         self.assertEqual(simulation_material_value("unknown"), "Shell Credit")

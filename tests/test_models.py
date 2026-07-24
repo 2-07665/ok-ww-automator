@@ -18,6 +18,17 @@ class ModelsTest(unittest.TestCase):
         self.assertTrue(config.run_stamina)
         self.assertEqual(config.which_to_farm, "无音区")
         self.assertEqual(config.simulation_material, "贝币")
+        self.assertTrue(config.farm_nightmare_purification)
+        self.assertTrue(config.farm_tacet_discord_nest)
+
+    def test_nightmare_is_effectively_disabled_without_targets(self) -> None:
+        config = SheetRunConfig(
+            run_nightmare=True,
+            farm_nightmare_purification=False,
+            farm_tacet_discord_nest=False,
+        )
+
+        self.assertFalse(config.should_run_nightmare)
 
     def test_run_result_derives_report_fields(self) -> None:
         started = dt.datetime(2026, 5, 16, 3, 0, tzinfo=BEIJING_TZ)

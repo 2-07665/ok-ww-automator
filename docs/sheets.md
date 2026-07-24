@@ -32,7 +32,12 @@ Labels must be strictly unique. This allows the system to not only parse the con
 | `forgery_weapon_type`| 凝素领域武器类型 | String |
 | `forgery_version` | 凝素领域版本 | String |
 | `simulation_material`| 模拟领域设置 | String |
-| `run_nightmare` | 梦魇祓除 | Boolean |
+| `run_nightmare` | 刷声骸 | Boolean |
+| `farm_tacet_discord_nest` | 残象聚落 | Boolean (defaults to `TRUE`) |
+| `farm_nightmare_purification` | 梦魇祓除 | Boolean (defaults to `TRUE`) |
+
+`刷声骸` is the master switch for full Nightmare Nest farming during the daily task. If it is enabled while
+both `残象聚落` and `梦魇祓除` are disabled, Nightmare farming is treated as disabled.
 
 ## Result Logs
 

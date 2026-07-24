@@ -86,7 +86,9 @@ CONFIG_FIELDS: tuple[ConfigField, ...] = (
     ConfigField("forgery_weapon_type", "凝素领域武器类型", str),
     ConfigField("forgery_version", "凝素领域版本", str),
     ConfigField("simulation_material", "模拟领域设置", str),
-    ConfigField("run_nightmare", "梦魇祓除", bool),
+    ConfigField("run_nightmare", "刷声骸", bool),
+    ConfigField("farm_tacet_discord_nest", "残象聚落", bool),
+    ConfigField("farm_nightmare_purification", "梦魇祓除", bool),
 )
 
 LABEL_BY_FIELD = {field.field_name: field.label for field in CONFIG_FIELDS}
@@ -130,6 +132,12 @@ class ConfigSheetParser:
             skip_daily_once=values.get("skip_daily_once", defaults.skip_daily_once),
             shutdown_after_daily=values.get("shutdown_after_daily", defaults.shutdown_after_daily),
             run_nightmare=values.get("run_nightmare", defaults.run_nightmare),
+            farm_nightmare_purification=values.get(
+                "farm_nightmare_purification", defaults.farm_nightmare_purification
+            ),
+            farm_tacet_discord_nest=values.get(
+                "farm_tacet_discord_nest", defaults.farm_tacet_discord_nest
+            ),
             run_stamina=values.get("run_stamina", defaults.run_stamina),
             skip_stamina_once=values.get("skip_stamina_once", defaults.skip_stamina_once),
             shutdown_after_stamina=values.get("shutdown_after_stamina", defaults.shutdown_after_stamina),

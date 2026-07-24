@@ -52,7 +52,8 @@ class SheetsTest(unittest.TestCase):
             ["凝素领域设置", "荒蔓旧殿", "凝素领域序号", "1"],
             ["凝素领域武器类型", "讯刀", "凝素领域版本", "3.0"],
             ["模拟领域设置", "贝币"],
-            ["梦魇祓除", "是"],
+            ["刷声骸", "是"],
+            ["残象聚落", "否", "梦魇祓除", "是"],
         ]
 
         config = ConfigSheetParser().to_run_config(ConfigSheetParser().parse(rows))
@@ -74,6 +75,8 @@ class SheetsTest(unittest.TestCase):
         self.assertEqual(config.forgery_version, "3.0")
         self.assertEqual(config.simulation_material, "贝币")
         self.assertTrue(config.run_nightmare)
+        self.assertTrue(config.farm_nightmare_purification)
+        self.assertFalse(config.farm_tacet_discord_nest)
 
     def test_parser_rejects_duplicate_labels(self) -> None:
         rows = [["日常任务", "TRUE"], ["日常任务", "FALSE"]]

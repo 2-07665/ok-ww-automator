@@ -25,6 +25,8 @@ class SheetRunConfig:
     skip_daily_once: bool = False
     shutdown_after_daily: bool = False
     run_nightmare: bool = False
+    farm_nightmare_purification: bool = True
+    farm_tacet_discord_nest: bool = True
 
     run_stamina: bool = True
     skip_stamina_once: bool = False
@@ -43,6 +45,12 @@ class SheetRunConfig:
     forgery_version: str = ""
 
     simulation_material: str = "贝币"
+
+    @property
+    def should_run_nightmare(self) -> bool:
+        return self.run_nightmare and (
+            self.farm_nightmare_purification or self.farm_tacet_discord_nest
+        )
 
 
 @dataclass(frozen=True)

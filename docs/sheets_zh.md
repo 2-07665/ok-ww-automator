@@ -32,7 +32,12 @@
 | `forgery_weapon_type`| 凝素领域武器类型 | 字符串 |
 | `forgery_version` | 凝素领域版本 | 字符串 |
 | `simulation_material`| 模拟领域设置 | 字符串 |
-| `run_nightmare` | 梦魇祓除 | 布尔值 |
+| `run_nightmare` | 刷声骸 | 布尔值 |
+| `farm_tacet_discord_nest` | 残象聚落 | 布尔值（默认为 `TRUE`） |
+| `farm_nightmare_purification` | 梦魇祓除 | 布尔值（默认为 `TRUE`） |
+
+`刷声骸` 是日常任务中完整刷取梦魇巢穴的总开关。如果总开关启用，但 `残象聚落` 和
+`梦魇祓除` 均未启用，则视为未启用梦魇巢穴刷取。
 
 ## 结果日志
 

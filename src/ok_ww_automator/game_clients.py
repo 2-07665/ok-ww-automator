@@ -22,6 +22,11 @@ WINDOWS_NATIVE_TEARDOWN_EXIT_CODES = {
     WINDOWS_ACCESS_VIOLATION_EXIT_CODE,
     WINDOWS_ACCESS_VIOLATION_SIGNED_EXIT_CODE,
 }
+DAILY_ADDITIONAL_TASKS = "Additional Tasks to Run After Daily Task"
+AUTO_FARM_NIGHTMARE_NEST = "Auto Farm all Nightmare Nest"
+NIGHTMARE_FARM_SELECTION = "Which to Farm"
+NIGHTMARE_PURIFICATION = "Nightmare Purification"
+TACET_DISCORD_NEST = "Tacet Discord Nest"
 
 
 @dataclass(frozen=True)
@@ -63,9 +68,13 @@ class OkDailyGameClient:
             with ww_runtime_context(self.launcher.options.ww_root):
                 ok = self.launcher.start_ok_and_game()
                 from src.task.DailyTask import DailyTask
+                from src.task.NightmareNestTask import NightmareNestTask
 
                 daily_task = ok.task_executor.get_task_by_class(DailyTask)
-                apply_daily_task_config(sheet_config, daily_task)
+                nightmare_task = ok.task_executor.get_task_by_class(NightmareNestTask)
+                if daily_task is None or nightmare_task is None:
+                    raise RuntimeError("DailyTask or NightmareNestTask is not registered")
+                apply_daily_task_config(sheet_config, daily_task, nightmare_task)
                 stamina_start, backup_start = read_live_stamina(daily_task)
                 task_error = run_onetime_task(ok.task_executor, daily_task, timeout_seconds=1800)
                 daily_points = read_live_daily_points(daily_task)
@@ -264,16 +273,28 @@ def close_ok_runtime(ok) -> None:
         pass
 
 
-def apply_daily_task_config(sheet_config: SheetRunConfig, daily_task) -> None:
+def apply_daily_task_config(sheet_config: SheetRunConfig, daily_task, nightmare_task) -> None:
+    nightmare_targets = selected_nightmare_targets(sheet_config)
+
     selected_idx = farm_type_index(sheet_config.which_to_farm)
     daily_task.config["Which to Farm"] = daily_task.support_tasks[selected_idx]
     daily_task.config["Which Tacet Suppression to Farm"] = sheet_config.tacet_serial
     daily_task.config["Which Forgery Challenge to Farm"] = sheet_config.forgery_serial
     daily_task.config["Material Selection"] = simulation_material_value(sheet_config.simulation_material)
-    daily_task.config["Auto Farm all Nightmare Nest"] = sheet_config.run_nightmare
-    daily_task.config["Farm Nightmare Nest for Daily Echo"] = True
-    daily_task.config["Check Weekly Garden"] = False
-    daily_task.config["Continue Farm After Daily"]: True
+    daily_task.config["Farm Nightmare Nest for Daily Echo"] = bool(nightmare_targets)
+    daily_task.config[DAILY_ADDITIONAL_TASKS] = (
+        [AUTO_FARM_NIGHTMARE_NEST] if sheet_config.should_run_nightmare else []
+    )
+    nightmare_task.config[NIGHTMARE_FARM_SELECTION] = nightmare_targets
+
+
+def selected_nightmare_targets(sheet_config: SheetRunConfig) -> list[str]:
+    targets = []
+    if sheet_config.farm_nightmare_purification:
+        targets.append(NIGHTMARE_PURIFICATION)
+    if sheet_config.farm_tacet_discord_nest:
+        targets.append(TACET_DISCORD_NEST)
+    return targets
 
 
 def farm_type_index(which_to_farm: str) -> int:
