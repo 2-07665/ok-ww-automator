@@ -1,77 +1,45 @@
-# AI Agent Guidelines
+# Agent Guidelines
 
-This document provides strictly enforced instructions and strategic context for AI coding assistants working on the `ok-ww-automator` project.
+Use this file for durable project constraints. Keep feature plans and completed work in issues or release notes, not here.
 
-## Architecture & Module Overview
+## Project Map
 
-The project is structured to enforce a strict boundary between high-level orchestration and low-level game interaction. For detailed module behaviors, refer to the [docs/](./docs/) directory.
+- `scheduler.py`: Windows Task Scheduler entrypoint; discovers accounts, validates configuration, updates the upstream checkout, and dispatches jobs.
+- `runners.py`: Daily/stamina orchestration, decisions, retries, persistence, notifications, and healthcheck signaling. Keep it independent of UI implementation details.
+- `game_clients.py` and `game_attempt.py`: Boundary between orchestration and the upstream OK runtime. Each game attempt runs in a fresh subprocess.
+- `ok_launcher.py`: Loads the sibling `ok-wuthering-waves` checkout, manages its runtime context, and applies narrowly scoped compatibility patches.
+- `models.py` and `time_utils.py`: Pure data and calculations. They must not depend on UI or network libraries.
+- `config.py`, `sheets.py`, `waves_api.py`, `notices.py`, and `healthchecks.py`: Configuration and optional external integrations.
+- `ok_main.py` and `ok_tasks/`: Manual GUI launcher and automator-owned injectable OK tasks; separate from scheduled orchestration.
+- `docs/`: Detailed behavior and configuration reference.
 
-1. **Data Models ([docs/models.md](./docs/models.md))**: Pure Python dataclasses representing state. **Rule**: Zero dependencies on UI libraries or network clients.
-2. **Scheduler ([docs/scheduler.md](./docs/scheduler.md))**: The entrypoint for automated runs. **Rule**: Must spawn child processes for each account run to avoid `ok-script` global state deadlocks.
-3. **Runners ([docs/runners.md](./docs/runners.md))**: Business logic (fetching configs, decision trees, calculating burn). **Rule**: Runners must remain agnostic to UI implementation details.
-4. **Game Clients ([docs/runners.md](./docs/runners.md#architectural-boundary))**: The adapter layer. This is the **only** place where `ok-script` or `ok-wuthering-waves` modules are manipulated.
-5. **Launcher ([docs/ok-launcher.md](./docs/ok-launcher.md))**: Manages `sys.path` injection and `cwd` switching for the upstream repo.
-6. **Integrations**: Optional features for [Google Sheets](./docs/sheets.md), [Waves API](./docs/waves-api.md), and [Notifications](./docs/notices.md).
+## Non-Negotiable Design Rules
 
-## Core Design Principles
+1. **Isolate the OK lifecycle.** `ok-script` keeps process-global state and a cwd-based Windows mutex that `ok.quit()` does not fully release. Every retry or separate game attempt must use `SubprocessDailyGameClient` or `SubprocessStaminaGameClient`; never recreate `OkDailyGameClient` or `OkStaminaGameClient` repeatedly in one process. Multi-account scheduler jobs must also remain process-isolated.
+2. **Keep boundaries explicit.** Runners own business decisions; game clients and the launcher own scheduled upstream/UI interaction. Direct upstream imports are also allowed in `ok_tasks/`, where they are required for injectable GUI tasks.
+3. **Keep upstream checkouts clean.** Make project changes in `ok-ww-automator`. Do not add a `custom/` package or other project files to `ok-wuthering-waves` unless the user explicitly requests an upstream change.
+4. **Load optional integrations lazily.** Core imports and unit tests must not require `gspread`, `requests`, credentials, or network access.
+5. **Do not write live state into Sheets configuration.** Game state belongs in result-log worksheets. The intentional exception is clearing a `skip_*_once` control after it is consumed.
+6. **Keep runners stateless across attempts.** Accumulate per-run data in `RunResult`, not mutable runner state carried between attempts.
+7. **Treat runtime patches as fragile.** `ok_launcher.install_runtime_safety_patches()` guards missing capture frames by patching `ok.task.task.FindFeature.find_feature`. Re-check it whenever upstream task, frame, or feature APIs change.
 
-1. **Subprocess Isolation**: Always isolate the `ok.OK()` lifecycle to a single subprocess when dealing with multiple accounts.
-2. **Lazy Integration**: Optional integrations (e.g., `gspread`, `requests`) must be imported lazily. This ensures core tests execute instantly without network or heavy dependencies.
-3. **One-Way Configuration**: Live game state (e.g., current stamina) is **never** written back to the Google Sheets `Config` worksheet. It is only appended to log worksheets.
-4. **Stateless Runners**: Runners should not maintain internal state across multiple game attempts; use `models.RunResult` to accumulate outcome data.
-5. **Upstream Purity**: Treat `ok-wuthering-waves` as a clean upstream checkout. Do not add files to it or require a `custom/` package inside it.
-6. **Runtime Patches Are Fragile**: `src/ok_ww_automator/ok_launcher.py` currently installs an automator-side runtime patch against upstream `ok.task.task.FindFeature.find_feature`. The patch makes missing/invalid capture frames return an empty feature result instead of crashing in `FeatureSet.check_size()` with `NoneType object has no attribute 'shape'`. This is intentionally narrow, but fragile because it monkey-patches `ok-script` internals; re-check it whenever `ok-script` changes task/frame/feature APIs.
-7. **Retries Must Isolate OK Runtime**: `ok-script` creates process-global state and a cwd-based Windows mutex in `OK.__init__()`, and `ok.quit()` does not release everything needed for a clean second lifecycle. Retry attempts must therefore use the subprocess-backed game clients (`SubprocessDailyGameClient` / `SubprocessStaminaGameClient`) so every game attempt runs in a fresh Python process. Do not recreate `OkDailyGameClient` or `OkStaminaGameClient` repeatedly in the same parent process.
+## Repository and Runtime Assumptions
 
-## Project Assumptions
+- `ok-ww-automator`, `ok-wuthering-waves`, and optionally `ok-script` are sibling checkouts under one workspace. `ok_launcher.py` temporarily adds the upstream checkout to `sys.path` and switches `cwd` so its relative `configs/`, `logs/`, and `screenshots/` paths resolve correctly.
+- Use the shared parent virtual environment at `../.venv`; do not create `ok-ww-automator/.venv`.
+- Prefer `uv run --active ...` when using uv. Plain `uv run` inside this project can create a local environment and rewrite `uv.lock` for the current platform.
+- Runtime configuration comes from the process environment plus an optional dotenv file. Account files live in `env/`; a bare `ENV_FILE` such as `cn.env` resolves to `env/cn.env`.
+- `GAME_EXE_PATH` must point to `Wuthering Waves.exe`, not `Client-Win64-Shipping.exe`.
+- Scheduled automation targets Windows Task Scheduler. Imported XML tasks must use the parent `.venv` Python executable and the parent workspace as their working directory.
+- WSL may show widespread sibling-checkout changes caused only by CRLF/LF normalization. Before treating them as user edits, inspect `git status --porcelain=v2 --branch`, `git diff --stat`, and ahead/behind state.
 
-1. **Repository Layout**: `ok-ww-automator` and `ok-wuthering-waves` are sibling checkouts under one parent workspace, commonly `D:\dev\game\ok-ww`. The automator may also reference `ok-script`, but changes for this project should stay in `ok-ww-automator` unless the user explicitly asks otherwise.
-2. **Shared Virtual Environment**: Use one parent virtual environment for both `ok-ww-automator` and `ok-wuthering-waves`: `<workspace>/.venv`. Do not create or use `ok-ww-automator/.venv`. When running commands from this repo, prefer the shared interpreter directly, for example `../.venv/Scripts/python.exe -m unittest discover -s tests` on Windows or `../.venv/bin/python -m unittest discover -s tests` on POSIX.
-3. **WSL vs Windows Git Status**: The workspace is commonly accessed from both Windows and WSL. WSL Git may report massive `M` lists in sibling checkouts like `../ok-script` even when Windows Git reports clean; equal insert/delete diffs usually indicate CRLF/LF normalization noise, not real source edits. Check `git status --porcelain=v2 --branch`, `git diff --stat`, and branch ahead/behind before declaring the checkout dirty or blocked.
-4. **uv Usage**: Avoid plain `uv run` from inside `ok-ww-automator`; it can create a local project `.venv` and rewrite `uv.lock` for the current platform. If using uv, use the already-active shared environment (`uv run --active ...`) or install into the parent environment intentionally.
-5. **Windows Runtime Target**: The scheduled automation is designed for Windows Task Scheduler. Imported task XML files must point to the parent `.venv` Python executable and use the parent workspace as the working directory.
-6. **Account Profiles**: Runtime configuration is loaded from process environment plus an optional dotenv file. Account files live in `env/`; bare `ENV_FILE` values like `cn.env` resolve to `env/cn.env`.
-7. **Game Path**: `GAME_EXE_PATH` is required before launching the game adapter and must point to `Wuthering Waves.exe`, not the `Client-Win64-Shipping.exe` binary.
-8. **Upstream Context**: `ok_launcher.py` temporarily adds the `ok-wuthering-waves` checkout to `sys.path` and temporarily switches `cwd` so upstream relative paths such as `configs/`, `logs/`, and `screenshots/` resolve inside `ok-wuthering-waves`.
-9. **Scheduler Entrypoint**: `src/ok_ww_automator/scheduler.py` is the intended Windows Task Scheduler entrypoint. Multi-account runs must spawn isolated Python child processes because `ok-script` keeps process-global state and named Windows mutexes.
+## Log-Driven Bug Fixes
 
-## Log-Driven Bug Fix Workflow
+When investigating `../ok-wuthering-waves/logs/ok-script.log`:
 
-The user will frequently provide or refresh `ok-wuthering-waves/logs/ok-script.log` and ask for bugs to be fixed from the log evidence. These logs can be very large.
-
-1. **Update Upstream First**: At the start of a bug fix, run `git pull` in sibling checkouts `../ok-script` and `../ok-wuthering-waves` so the investigation accounts for upstream changes that may have broken or fixed the workflow. If either checkout has local changes or pull fails, report that and continue from the available state without overwriting user work.
-2. **Sample, Then Search**: Do not dump the whole log. Start with `tail -n 200 ../ok-wuthering-waves/logs/ok-script.log` from `ok-ww-automator`, then use targeted `rg -n` searches for timestamps, task names, `ERROR`, `WARNING`, `Traceback`, `exception`, `timeout`, `stuck`, `TaskExecutor`, `StartController`, `DeviceManager`, and mode-specific terms such as `stamina`, `daily`, or the task name in question.
-3. **Correlate Timeline**: Identify the first failure, later retries/restarts, and the last repeated symptom. Repeated heartbeat lines are usually less important than the transition where expected lines stop appearing.
-4. **Prefer Adapter Fixes**: When the log points to scheduler, launcher, retry, environment, process, or task-selection behavior, fix `ok-ww-automator` first. Only modify `ok-wuthering-waves` or `ok-script` if the user explicitly asks and the root cause is clearly in upstream code.
-5. **Keep Evidence Tight**: In the response, cite the key log lines or timestamps and explain why they imply the fix. Avoid pasting long tracebacks unless the user asks.
-6. **Add Regression Coverage**: Add or update focused unit tests that reproduce the logged failure mode with fakes/mocks. Keep tests in `ok-ww-automator/tests` unless the touched code is elsewhere.
-7. **Protect Runtime Artifacts**: Do not create `ok-ww-automator/.venv`, do not let `uv.lock` drift while investigating, and do not edit upstream logs/configs/screenshots as part of a fix unless the user asks.
-
-## Development & Testing
-
-Always verify changes by running the full test suite from the project root:
-
-```powershell
-# Run all unit tests
-..\.venv\Scripts\python.exe -m unittest discover -s tests
-
-# Check for compilation/syntax errors
-..\.venv\Scripts\python.exe -m compileall -q src tests main.py
-```
-
-*Note: On POSIX, use `../.venv/bin/python`.*
-
-If the shared Windows virtual environment cannot be executed from WSL, for example `../.venv/Scripts/python.exe` fails with a WSL socket/bind error and no POSIX `../.venv/bin/python` exists, use local `python3` for verification:
-
-```bash
-python3 -m unittest discover -s tests
-python3 -m compileall -q src tests main.py
-```
-
-State clearly in the final response that verification used local `python3` instead of the shared Windows venv.
-
-## Future Work
-
-- **Orchestration Refinement**: Consolidate the boilerplate in `DailyRunner` and `StaminaRunner` (e.g., common `run()` wrapper/context manager).
-- **Dynamic Config**: Refactor `SheetRunConfig` to use field metadata for Sheets labels, removing the manual mapping in `sheets.py`.
-- **Healthchecks**: Add external monitoring/healthchecks for missed or stuck scheduled runs.
+1. Pull `../ok-script` and `../ok-wuthering-waves` first. If either checkout has local changes or cannot be updated, preserve it, report the limitation, and continue with the available state.
+2. Start with `tail -n 200`; do not dump the whole log. Search with `rg -n` for the relevant timestamp/task plus `ERROR`, `WARNING`, `Traceback`, `exception`, `timeout`, `stuck`, `TaskExecutor`, `StartController`, and `DeviceManager`.
+3. Correlate the first failure, retry/restart transitions, and final repeated symptom. Heartbeats matter mainly where expected progress stops.
+4. Prefer fixes in this repository for scheduler, launcher, environment, retry, process, or task-selection problems. Change upstream only when explicitly requested and supported by the evidence.
+5. Add focused regression tests under `tests/`, and cite only the key timestamps or log lines in the handoff.
+6. Do not modify logs, screenshots, runtime configuration, `uv.lock`, or upstream source as incidental cleanup.
