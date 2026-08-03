@@ -17,6 +17,9 @@ waves = [
 notice = [
     "requests>=2.0",
 ]
+build = [
+    "pyinstaller>=6.0",
+]
 
 [project.scripts]
 ok-ww-automator-ok = "ok_ww_automator.ok_main:main"

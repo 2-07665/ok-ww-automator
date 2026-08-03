@@ -81,3 +81,24 @@ uv run --active python -m ok_ww_automator.ok_main
 ```powershell
 uv run --active python -m ok_ww_automator.scheduler --mode daily --dry-run
 ```
+
+## Windows 提权启动器
+
+可选的单文件 `OK Automator Launcher` 提供常规 OK GUI 启动，以及按顺序执行的多账号 Daily/Stamina 任务，并带有内嵌日志和完整进程树停止功能。本项目不发布预构建的可执行文件；请使用原生 Windows Python 3.12 在本地构建。
+
+在 `ok-ww-automator` 目录中，将构建依赖安装到父目录的共享虚拟环境，然后运行构建脚本：
+
+```powershell
+uv pip install --python ..\.venv\Scripts\python.exe -e ".[build]"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\build_launcher.ps1
+```
+
+构建过程会使用现有的上游 OK 图标，并生成：
+
+```text
+dist\OKAutomatorLauncher.exe
+```
+
+请将可执行文件保留在 `ok-ww-automator\dist` 中，或复制到 `ok-ww-automator` 根目录。运行时必须保留同级的 `..\.venv\Scripts\python.exe` 和 `..\ok-wuthering-waves` 项目。每次启动该可执行文件时，Windows 都会通过 UAC 请求管理员权限。
+
+Automator 或上游项目的常规源码更新不需要重新构建启动器。只有启动器功能或其已记录的外部契约发生变化时才需要重建。行为和兼容性详情请参阅 [Windows 启动器指南](docs/windows-launcher_zh.md)。

@@ -81,3 +81,24 @@ To run the scheduler manually (dry-run):
 ```powershell
 uv run --active python -m ok_ww_automator.scheduler --mode daily --dry-run
 ```
+
+## Elevated Windows Launcher
+
+The optional one-file `OK Automator Launcher` provides the regular OK GUI action plus ordered, multi-account Daily/Stamina runs with embedded logs and process-tree stopping. No prebuilt executable is released; build it locally with native Windows Python 3.12.
+
+From the `ok-ww-automator` directory, install the build dependency into the shared parent virtual environment and run the build script:
+
+```powershell
+uv pip install --python ..\.venv\Scripts\python.exe -e ".[build]"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\build_launcher.ps1
+```
+
+The build uses the existing upstream OK icon and produces:
+
+```text
+dist\OKAutomatorLauncher.exe
+```
+
+Keep the executable in `ok-ww-automator\dist`, or copy it to the `ok-ww-automator` root. The sibling `..\.venv\Scripts\python.exe` and `..\ok-wuthering-waves` checkout must remain available at runtime. Windows requests administrator privileges through UAC whenever the executable starts.
+
+Ordinary Automator or upstream source updates do not require rebuilding the launcher. Rebuild only after launcher features or its documented external contracts change. See [the Windows launcher guide](docs/windows-launcher.md) for behavior and compatibility details.

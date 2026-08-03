@@ -11,6 +11,7 @@ Use this file for durable project constraints. Keep feature plans and completed 
 - `models.py` and `time_utils.py`: Pure data and calculations. They must not depend on UI or network libraries.
 - `config.py`, `sheets.py`, `waves_api.py`, `notices.py`, and `healthchecks.py`: Configuration and optional external integrations.
 - `ok_main.py` and `ok_tasks/`: Manual GUI launcher and automator-owned injectable OK tasks; separate from scheduled orchestration.
+- `windows_launcher.py` and `windows/`: Elevated desktop launcher plus its isolated PyInstaller entrypoint, manifest, and build script.
 - `docs/`: Detailed behavior and configuration reference.
 
 ## Non-Negotiable Design Rules
