@@ -21,6 +21,7 @@ except ModuleNotFoundError:  # Headless test environments may omit the optional 
     messagebox = None  # type: ignore[assignment]
     ttk = None  # type: ignore[assignment]
 
+from .config import ConfigError, read_dotenv
 from .env_discovery import AccountEnv, discover_account_envs
 
 
@@ -31,6 +32,7 @@ DEFAULT_WINDOW_SIZE = (1_200, 900)
 MINIMUM_WINDOW_SIZE = (950, 720)
 MINIMUM_ACCOUNT_TABLE_HEIGHT = 190
 MINIMUM_LOG_HEIGHT = 260
+GAME_LAUNCH_COOLDOWN_MS = 3_000
 
 
 class LauncherConfigurationError(RuntimeError):
@@ -51,6 +53,12 @@ class ProcessEvent:
     operation: str
     text: str = ""
     returncode: int | None = None
+
+
+@dataclass(frozen=True)
+class GameLaunch:
+    account_id: str
+    executable: Path
 
 
 def is_automator_root(path: Path) -> bool:
@@ -149,6 +157,44 @@ def selected_account_ids(accounts: Sequence[AccountEnv], selected_ids: Iterable[
     if not ordered:
         raise ValueError("Select at least one account.")
     return ordered
+
+
+def build_game_launch(accounts: Sequence[AccountEnv], selected_ids: Iterable[str]) -> GameLaunch:
+    """Resolve the game executable for exactly one selected account."""
+    ordered_ids = selected_account_ids(accounts, selected_ids)
+    if len(ordered_ids) != 1:
+        raise ValueError("Select exactly one account to launch its game.")
+    by_id = {account.account_id: account for account in accounts}
+    account_id = ordered_ids[0]
+    account = by_id[account_id]
+    try:
+        raw_path = read_dotenv(account.path).get("GAME_EXE_PATH", "").strip()
+    except (ConfigError, OSError, UnicodeError) as exc:
+        raise ValueError(f"Account {account_id}: {exc}") from exc
+    if not raw_path:
+        raise ValueError(f"Account {account_id}: GAME_EXE_PATH is missing.")
+    executable = Path(raw_path).expanduser()
+    if not executable.is_file():
+        raise ValueError(f"Account {account_id}: game executable not found: {executable}")
+    return GameLaunch(account_id=account_id, executable=executable.resolve())
+
+
+def launch_game(
+    launch: GameLaunch,
+    *,
+    popen: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
+    platform_name: str = os.name,
+) -> None:
+    """Start one game directly and deliberately relinquish process ownership."""
+    popen(
+        [str(launch.executable)],
+        cwd=str(launch.executable.parent),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        shell=False,
+        creationflags=CREATE_NO_WINDOW if platform_name == "nt" else 0,
+    )
 
 
 class ManagedProcess:
@@ -262,6 +308,7 @@ class LauncherApp:
         self.accounts: list[AccountEnv] = []
         self.process = ManagedProcess()
         self._close_when_idle = False
+        self._game_launch_cooldown = False
 
         self.status_text = tk.StringVar(value="Initializing…")
         self.mode = tk.StringVar(value="daily")
@@ -341,9 +388,16 @@ class LauncherApp:
             ttk.Button(controls, text="Move Up", command=lambda: self._move_accounts(-1)),
             ttk.Button(controls, text="Move Down", command=lambda: self._move_accounts(1)),
         ]
+        self.game_button = ttk.Button(controls, text="Launch Game", command=self._launch_selected_game)
+        self.account_buttons.append(self.game_button)
         for index, button in enumerate(self.account_buttons):
             controls.columnconfigure(index, weight=1, uniform="account_controls")
-            button.grid(row=0, column=index, sticky="ew", padx=(0, 6) if index < 4 else 0)
+            button.grid(
+                row=0,
+                column=index,
+                sticky="ew",
+                padx=(0, 6) if index < len(self.account_buttons) - 1 else 0,
+            )
 
         status_frame = ttk.Frame(outer)
         status_frame.grid(row=5, column=0, columnspan=2, sticky="ew")
@@ -432,6 +486,31 @@ class LauncherApp:
             return
         self._start_operation(f"{self.mode.get().title()} scheduler", command)
 
+    def _launch_selected_game(self) -> None:
+        if self.paths is None or self._game_launch_cooldown:
+            return
+        try:
+            launch = build_game_launch(self._displayed_accounts(), self.account_table.selection())
+        except ValueError as exc:
+            messagebox.showwarning(APP_NAME, str(exc), parent=self.root)
+            return
+
+        self._game_launch_cooldown = True
+        self._sync_controls()
+        try:
+            launch_game(launch)
+        except OSError as exc:
+            self.status_text.set(f"Failed to launch game: {exc}")
+            self._append_log(f"ERROR launching game: {exc}\n")
+        else:
+            self.status_text.set(f"Launched game for: {launch.account_id}")
+            self._append_log(f"Launched {launch.account_id}: {launch.executable}\n")
+        self.root.after(GAME_LAUNCH_COOLDOWN_MS, self._finish_game_launch_cooldown)
+
+    def _finish_game_launch_cooldown(self) -> None:
+        self._game_launch_cooldown = False
+        self._sync_controls()
+
     def _start_operation(self, operation: str, command: Sequence[str]) -> None:
         if self.paths is None:
             return
@@ -514,7 +593,8 @@ class LauncherApp:
     def _sync_controls(self) -> None:
         active = self.process.is_active
         valid = self.paths is not None
-        selected = bool(self.account_table.selection())
+        selection_count = len(self.account_table.selection())
+        selected = selection_count > 0
         self.ok_button.configure(state="normal" if valid and not active else "disabled")
         self.scheduler_button.configure(state="normal" if valid and selected and not active else "disabled")
         self.stop_button.configure(state="normal" if active else "disabled")
@@ -524,6 +604,11 @@ class LauncherApp:
         self.account_table.configure(selectmode="none" if active else "extended")
         for button in self.account_buttons:
             button.configure(state=state)
+        self.game_button.configure(
+            state="normal"
+            if valid and selection_count == 1 and not active and not self._game_launch_cooldown
+            else "disabled"
+        )
 
 
 def enable_windows_dpi_awareness() -> None:

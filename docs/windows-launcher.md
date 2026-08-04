@@ -1,6 +1,6 @@
 # OK Automator Launcher (Windows)
 
-`OK Automator Launcher` is a small elevated desktop front end for the existing Automator entrypoints. It discovers profiles from `env/*.env`, launches the regular OK GUI, and runs Daily or Stamina scheduling for selected accounts in the displayed order. It does not install, repair, activate, or update Python environments.
+`OK Automator Launcher` is a small elevated desktop front end for the existing Automator entrypoints. It discovers profiles from `env/*.env`, launches the regular OK GUI or one selected account's game, and runs Daily or Stamina scheduling for selected accounts in the displayed order. It does not install, repair, activate, or update Python environments.
 
 ## Workspace and executable placement
 
@@ -24,6 +24,8 @@ The executable contains a `requireAdministrator` manifest, so Windows requests e
 Only one launcher operation can run at a time. Standard output and errors are combined in the bounded live log. Choosing **Stop**, or confirming a window close while an operation is active, uses Windows process-tree termination so scheduler subprocesses and game children are not left behind.
 
 Every refresh selects all discovered account profiles. `.env.example` is excluded; `.env` is shown as `default`; and names such as `CN.env` retain their exact case. Selection, ordering, and mode are intentionally reset between launcher sessions.
+
+**Launch Game** is enabled only when exactly one account is selected. It validates that profile's `GAME_EXE_PATH`, then starts the executable directly. Account multi-selection remains available for scheduler runs. Game launching is intentionally separate from managed Automator operations: it does not detect or close an already-running game, and the launcher does not monitor, stop, or otherwise control a game after starting it. The button is disabled for three seconds after use to prevent accidental rapid repeat launches.
 
 ## Build
 

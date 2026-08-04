@@ -15,16 +15,20 @@ from ok_ww_automator.env_discovery import AccountEnv, discover_account_envs
 from ok_ww_automator.windows_launcher import (
     CREATE_NO_WINDOW,
     DEFAULT_WINDOW_SIZE,
+    GAME_LAUNCH_COOLDOWN_MS,
+    GameLaunch,
     LauncherConfigurationError,
     LauncherPaths,
     MINIMUM_ACCOUNT_TABLE_HEIGHT,
     MINIMUM_LOG_HEIGHT,
     MINIMUM_WINDOW_SIZE,
     ManagedProcess,
+    build_game_launch,
     build_ok_gui_command,
     build_scheduler_command,
     discover_launcher_paths,
     find_automator_root,
+    launch_game,
     selected_account_ids,
 )
 
@@ -111,6 +115,39 @@ class LauncherDiscoveryTest(unittest.TestCase):
 
         self.assertEqual([account.account_id for account in accounts], ["default", "CN", "US"])
 
+    def test_game_launch_uses_the_selected_account_path(self) -> None:
+        cn_game = self.workspace / "CN" / "Wuthering Waves.exe"
+        us_game = self.workspace / "US" / "Wuthering Waves.exe"
+        cn_game.parent.mkdir()
+        us_game.parent.mkdir()
+        cn_game.touch()
+        us_game.touch()
+        cn_env = self.automator / "env" / "CN.env"
+        us_env = self.automator / "env" / "US.env"
+        cn_env.write_text(f'GAME_EXE_PATH="{cn_game.as_posix()}"\n', encoding="utf-8")
+        us_env.write_text(f'GAME_EXE_PATH="{us_game.as_posix()}"\n', encoding="utf-8")
+        accounts = [AccountEnv("US", us_env), AccountEnv("CN", cn_env)]
+
+        launch = build_game_launch(accounts, ["CN"])
+
+        self.assertEqual(launch, GameLaunch("CN", cn_game.resolve()))
+
+    def test_game_launch_requires_exactly_one_account(self) -> None:
+        accounts = [AccountEnv("US", Path("US.env")), AccountEnv("CN", Path("CN.env"))]
+        with self.assertRaisesRegex(ValueError, "Select exactly one account"):
+            build_game_launch(accounts, ["US", "CN"])
+
+    def test_game_launches_require_a_configured_existing_executable(self) -> None:
+        missing_env = self.automator / "env" / "missing.env"
+        missing_env.touch()
+        with self.assertRaisesRegex(ValueError, "Account missing: GAME_EXE_PATH is missing"):
+            build_game_launch([AccountEnv("missing", missing_env)], ["missing"])
+
+        invalid_env = self.automator / "env" / "invalid.env"
+        invalid_env.write_text("GAME_EXE_PATH=C:/missing/game.exe\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "Account invalid: game executable not found"):
+            build_game_launch([AccountEnv("invalid", invalid_env)], ["invalid"])
+
 
 class LauncherCommandTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -181,6 +218,21 @@ class LauncherCommandTest(unittest.TestCase):
         self.assertGreaterEqual(MINIMUM_WINDOW_SIZE[0], 900)
         self.assertGreaterEqual(MINIMUM_ACCOUNT_TABLE_HEIGHT, 180)
         self.assertGreaterEqual(MINIMUM_LOG_HEIGHT, 240)
+        self.assertEqual(GAME_LAUNCH_COOLDOWN_MS, 3_000)
+
+    def test_launch_game_starts_executable_without_managing_it(self) -> None:
+        popen = Mock()
+        launch = GameLaunch("US", Path("C:/Games/US/Wuthering Waves.exe"))
+
+        launch_game(launch, popen=popen, platform_name="nt")
+
+        popen.assert_called_once()
+        self.assertEqual(popen.call_args.args[0], [str(launch.executable)])
+        self.assertEqual(popen.call_args.kwargs["cwd"], str(launch.executable.parent))
+        self.assertIs(popen.call_args.kwargs["stdout"], __import__("subprocess").DEVNULL)
+        self.assertIs(popen.call_args.kwargs["stderr"], __import__("subprocess").DEVNULL)
+        self.assertFalse(popen.call_args.kwargs["shell"])
+        self.assertEqual(popen.call_args.kwargs["creationflags"], CREATE_NO_WINDOW)
 
 
 class ManagedProcessTest(unittest.TestCase):

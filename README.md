@@ -84,7 +84,7 @@ uv run --active python -m ok_ww_automator.scheduler --mode daily --dry-run
 
 ## Windows 提权启动器
 
-可选的单文件 `OK Automator Launcher` 提供常规 OK GUI 启动，以及按顺序执行的多账号 Daily/Stamina 任务，并带有内嵌日志和完整进程树停止功能。本项目不发布预构建的可执行文件；请使用原生 Windows Python 3.12 在本地构建。
+可选的单文件 `OK Automator Launcher` 提供常规 OK GUI 启动、为单个所选账号直接启动游戏，以及按顺序执行的多账号 Daily/Stamina 任务，并带有内嵌日志和完整进程树停止功能。只有恰好选中一个账号时，**Launch Game** 才会启用；它会读取该账号的 `GAME_EXE_PATH` 并直接启动。它不会检测、关闭或管理已有及新启动的游戏进程，按钮还带有 3 秒冷却时间，以防误操作造成连续多开。多选功能仍用于 scheduler 任务。本项目不发布预构建的可执行文件；请使用原生 Windows Python 3.12 在本地构建。
 
 在 `ok-ww-automator` 目录中，将构建依赖安装到父目录的共享虚拟环境，然后运行构建脚本：
 

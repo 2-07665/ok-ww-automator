@@ -84,7 +84,7 @@ uv run --active python -m ok_ww_automator.scheduler --mode daily --dry-run
 
 ## Elevated Windows Launcher
 
-The optional one-file `OK Automator Launcher` provides the regular OK GUI action plus ordered, multi-account Daily/Stamina runs with embedded logs and process-tree stopping. No prebuilt executable is released; build it locally with native Windows Python 3.12.
+The optional one-file `OK Automator Launcher` provides the regular OK GUI action, direct game launching for one selected account, and ordered multi-account Daily/Stamina runs with embedded logs and process-tree stopping. **Launch Game** is enabled only when exactly one account is selected; it reads that profile's `GAME_EXE_PATH` and starts it directly. It does not detect, close, or manage existing or newly launched game processes, and the button has a three-second cooldown to prevent accidental repeated launches. Multi-selection remains available for scheduler runs. No prebuilt executable is released; build it locally with native Windows Python 3.12.
 
 From the `ok-ww-automator` directory, install the build dependency into the shared parent virtual environment and run the build script:
 
