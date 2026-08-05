@@ -7,7 +7,7 @@ import tempfile
 import threading
 import time
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, call, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -233,6 +233,43 @@ class LauncherCommandTest(unittest.TestCase):
         self.assertIs(popen.call_args.kwargs["stderr"], __import__("subprocess").DEVNULL)
         self.assertFalse(popen.call_args.kwargs["shell"])
         self.assertEqual(popen.call_args.kwargs["creationflags"], CREATE_NO_WINDOW)
+
+    def test_launch_game_does_not_leak_pyinstaller_dll_path_to_game(self) -> None:
+        popen = Mock()
+        dll_directory_setter = Mock()
+        launch = GameLaunch("US", Path("C:/Games/US/Wuthering Waves.exe"))
+
+        with (
+            patch.object(sys, "frozen", True, create=True),
+            patch.object(sys, "_MEIPASS", "C:/Temp/_MEI123", create=True),
+        ):
+            launch_game(
+                launch,
+                popen=popen,
+                platform_name="nt",
+                dll_directory_setter=dll_directory_setter,
+            )
+
+        self.assertEqual(dll_directory_setter.call_args_list, [call(None), call("C:/Temp/_MEI123")])
+        popen.assert_called_once()
+
+    def test_launch_game_restores_pyinstaller_dll_path_after_spawn_failure(self) -> None:
+        dll_directory_setter = Mock()
+        launch = GameLaunch("US", Path("C:/Games/US/Wuthering Waves.exe"))
+
+        with (
+            patch.object(sys, "frozen", True, create=True),
+            patch.object(sys, "_MEIPASS", "C:/Temp/_MEI123", create=True),
+            self.assertRaisesRegex(OSError, "failed"),
+        ):
+            launch_game(
+                launch,
+                popen=Mock(side_effect=OSError("failed")),
+                platform_name="nt",
+                dll_directory_setter=dll_directory_setter,
+            )
+
+        self.assertEqual(dll_directory_setter.call_args_list, [call(None), call("C:/Temp/_MEI123")])
 
 
 class ManagedProcessTest(unittest.TestCase):

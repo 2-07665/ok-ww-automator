@@ -184,17 +184,38 @@ def launch_game(
     *,
     popen: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
     platform_name: str = os.name,
+    dll_directory_setter: Callable[[str | None], None] | None = None,
 ) -> None:
     """Start one game directly and deliberately relinquish process ownership."""
-    popen(
-        [str(launch.executable)],
-        cwd=str(launch.executable.parent),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        shell=False,
-        creationflags=CREATE_NO_WINDOW if platform_name == "nt" else 0,
-    )
+    restore_dll_directory: str | None = None
+    if platform_name == "nt" and getattr(sys, "frozen", False):
+        # PyInstaller one-file sets this to _MEIPASS. Do not let an independent
+        # game load and lock the launcher's temporary VCRUNTIME DLLs.
+        restore_dll_directory = str(getattr(sys, "_MEIPASS", "")) or None
+        if dll_directory_setter is None:
+            dll_directory_setter = set_windows_dll_directory
+        dll_directory_setter(None)
+    try:
+        popen(
+            [str(launch.executable)],
+            cwd=str(launch.executable.parent),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            shell=False,
+            creationflags=CREATE_NO_WINDOW if platform_name == "nt" else 0,
+        )
+    finally:
+        if dll_directory_setter is not None and restore_dll_directory is not None:
+            dll_directory_setter(restore_dll_directory)
+
+
+def set_windows_dll_directory(path: str | None) -> None:
+    """Set the process DLL search override used by PyInstaller on Windows."""
+    import ctypes
+
+    if not ctypes.windll.kernel32.SetDllDirectoryW(path):
+        raise ctypes.WinError()
 
 
 class ManagedProcess:
