@@ -115,6 +115,7 @@ class OkLauncher:
         with ww_runtime_context(self.options.ww_root):
             imports = load_runtime_imports(self.options.ww_root)
             headless_config = dict(imports.config)
+            headless_config.pop("gui", None)
             headless_config["use_gui"] = False
             ok = imports.ok_class(headless_config)
         if getattr(ok, "task_executor", None) is None:

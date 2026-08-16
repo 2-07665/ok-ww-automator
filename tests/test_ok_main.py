@@ -11,14 +11,14 @@ class OkMainTest(unittest.TestCase):
     def test_build_ok_config_adds_extra_tasks_without_mutating_base_config(self) -> None:
         base_config = {
             "onetime_tasks": [["src.task.DailyTask", "DailyTask"], list(EXTRA_ONETIME_TASKS[0])],
-            "use_gui": True,
+            "gui": {"type": "qt"},
         }
 
         config = build_ok_config(base_config)
 
         self.assertIsNot(config, base_config)
         self.assertEqual(base_config["onetime_tasks"], [["src.task.DailyTask", "DailyTask"], list(EXTRA_ONETIME_TASKS[0])])
-        self.assertEqual(config["use_gui"], True)
+        self.assertEqual(config["gui"], {"type": "qt"})
         for task in EXTRA_ONETIME_TASKS:
             self.assertIn(list(task), config["onetime_tasks"])
         self.assertEqual(config["onetime_tasks"].count(list(EXTRA_ONETIME_TASKS[0])), 1)

@@ -250,14 +250,16 @@ class OkLauncherTest(unittest.TestCase):
 
             self.assertEqual(feature_finder.find_feature("char_1_text"), ["found"])
 
-    def test_start_ok_keeps_ww_root_on_path_during_ok_construction(self) -> None:
+    def test_start_ok_uses_headless_config_and_keeps_ww_root_during_construction(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             ww_root = Path(tmp_dir).resolve()
             seen = []
 
             class FakeOkClass:
                 def __init__(self, config) -> None:
-                    seen.append((str(ww_root) in sys.path, Path.cwd(), config["use_gui"]))
+                    seen.append(
+                        (str(ww_root) in sys.path, Path.cwd(), "gui" in config, config["use_gui"])
+                    )
                     self.device_manager = FakeDeviceManager({"connected": True}, FakeCapture(True), object())
                     self.task_executor = FakeExecutor()
 
@@ -270,14 +272,16 @@ class OkLauncherTest(unittest.TestCase):
                     game_exe_path=Path("/game/Wuthering Waves.exe"),
                 )
             )
+            upstream_config = {"gui": {"type": "qt"}}
 
             with patch("ok_ww_automator.ok_launcher.load_runtime_imports") as load_imports:
                 load_imports.return_value.ok_class = FakeOkClass
-                load_imports.return_value.config = {"use_gui": True}
+                load_imports.return_value.config = upstream_config
                 ok = launcher.start_ok()
 
             self.assertIsInstance(ok, FakeOkClass)
-            self.assertEqual(seen, [(True, ww_root, False)])
+            self.assertEqual(seen, [(True, ww_root, False, False)])
+            self.assertEqual(upstream_config, {"gui": {"type": "qt"}})
             self.assertNotIn(str(ww_root), sys.path)
             self.assertNotEqual(Path.cwd(), ww_root)
 
