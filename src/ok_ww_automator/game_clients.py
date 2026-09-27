@@ -6,7 +6,6 @@ from dataclasses import asdict
 from dataclasses import dataclass
 import json
 import os
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -16,6 +15,15 @@ from .config import AppConfig
 from .models import SheetRunConfig
 from .ok_launcher import OkLauncher, kill_game_processes, run_onetime_task, ww_runtime_context
 from .processes import run_with_timeout
+
+# Bound the whole child, including startup, OCR and native teardown. Per-task
+# deadlines alone cannot stop a hung capture/driver call outside the executor.
+ATTEMPT_TIMEOUTS = {
+    ("daily", "run"): 40 * 60,
+    ("weekly", "run"): 40 * 60,
+    ("stamina", "run"): 20 * 60,
+    ("stamina", "read"): 15 * 60,
+}
 
 WINDOWS_ACCESS_VIOLATION_EXIT_CODE = 0xC0000005
 WINDOWS_ACCESS_VIOLATION_SIGNED_EXIT_CODE = -1073741819
@@ -300,15 +308,14 @@ def run_game_attempt_subprocess(
         env["ENV_FILE"] = str(app_config.env_path)
 
         if timeout is None:
-            completed = subprocess.run(command, env=env, check=False)
-        else:
-            try:
-                completed = run_with_timeout(command, env=env, timeout=timeout)
-            except BaseException:
-                # A game started through a platform launcher may not remain a
-                # descendant of the Python process; use the existing game cleanup too.
-                kill_game_processes()
-                raise
+            timeout = ATTEMPT_TIMEOUTS[(mode, operation)]
+        try:
+            completed = run_with_timeout(command, env=env, timeout=timeout)
+        except BaseException:
+            # A game started through a platform launcher may not remain a
+            # descendant of the Python process; use the existing game cleanup too.
+            kill_game_processes()
+            raise
         payload = read_attempt_payload(output_path)
         if completed.returncode != 0:
             if is_native_teardown_crash(completed.returncode) and is_attempt_result_payload(payload, mode, operation):
@@ -403,28 +410,24 @@ def simulation_material_value(simulation_material: str) -> str:
 
 
 def read_live_stamina(task, *, retries: int = 3, retry_sleep: float = 10.0) -> tuple[int | None, int | None]:
-    last_exc: Exception | None = None
     for attempt in range(1, retries + 1):
         try:
             task.ensure_main(esc=True, time_out=20)
-            book_box = task.openF2Book("gray_book_boss")
-            task.click_box(book_box, after_sleep=1)
+            task.openF2Book("gray_book_boss")
             stamina, backup_stamina, _ = task.get_stamina()
             task.send_key("esc", after_sleep=1)
-            if stamina >= 0:
+            if stamina >= 0 and backup_stamina >= 0:
                 return stamina, backup_stamina
-        except Exception as exc:
-            last_exc = exc
+        except Exception:
+            pass
         finally:
-            task.ensure_main(esc=True, time_out=20)
+            restore_main(task)
 
         if attempt < retries:
             import time
 
             time.sleep(retry_sleep)
 
-    if last_exc is not None:
-        return None, None
     return None, None
 
 
@@ -433,13 +436,13 @@ def read_live_daily_points(task, *, retries: int = 3, retry_sleep: float = 10.0)
         try:
             task.ensure_main(esc=True, time_out=20)
             task.open_daily()
-            points = coerce_int(task.info_get("total daily points", 0))
-            if points is not None:
+            points = coerce_int(task.info_get("total daily points"))
+            if points is not None and 0 <= points <= 100:
                 return points
         except Exception:
             pass
         finally:
-            task.ensure_main(esc=True, time_out=20)
+            restore_main(task)
 
         if attempt < retries:
             import time
@@ -447,6 +450,14 @@ def read_live_daily_points(task, *, retries: int = 3, retry_sleep: float = 10.0)
             time.sleep(retry_sleep)
 
     return None
+
+
+def restore_main(task) -> None:
+    """Best-effort navigation after a read must not erase data or defeat retries."""
+    try:
+        task.ensure_main(esc=True, time_out=20)
+    except Exception:
+        pass
 
 
 def coerce_int(value: object) -> int | None:

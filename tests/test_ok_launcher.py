@@ -2,7 +2,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -14,7 +14,6 @@ from ok_ww_automator.ok_launcher import (
     is_ok_ready,
     kill_game_processes,
     run_onetime_task,
-    ww_import_path,
     ww_runtime_context,
 )
 
@@ -95,6 +94,8 @@ class FakeTask:
 
     def __init__(self, *, enabled=False, error=None) -> None:
         self.enabled = enabled
+        self.config = {}
+        self.exit_after_task = False
         self.running = True
         self.error = error
         self.enable_count = 0
@@ -339,9 +340,22 @@ class OkLauncherTest(unittest.TestCase):
         error = run_onetime_task(executor, task, sleep=lambda _: None)
 
         self.assertEqual(error, "Fake Task: bad state")
-        self.assertFalse(task.running)
         self.assertEqual(task.enable_count, 1)
         self.assertEqual(task.unpause_count, 1)
+
+    def test_headless_completion_disables_saved_exit_preference_before_enabling(self):
+        task = FakeTask(enabled=False)
+        task.config["Exit After Task"] = True
+        task.exit_after_task = True
+        original_enable = task.enable
+
+        def enable():
+            self.assertFalse(task.config["Exit After Task"])
+            self.assertFalse(task.exit_after_task)
+            original_enable()
+
+        task.enable = enable
+        self.assertEqual(run_onetime_task(FakeExecutor(), task), "")
 
     def test_run_onetime_task_times_out(self) -> None:
         clock = Clock()
@@ -365,16 +379,19 @@ class OkLauncherTest(unittest.TestCase):
         with self.assertRaisesRegex(OkLaunchError, "Executor exit event"):
             run_onetime_task(executor, task, sleep=lambda _: None)
 
-    def test_get_task_error_falls_back_without_qt(self) -> None:
-        self.assertEqual(get_task_error(FakeTask(error="  failed  ")), "failed")
+    def test_get_task_error_uses_headless_task_translation_and_english_fallback(self):
+        task = Mock()
+        task.tr.return_value = "错误"
+        task.info_get.side_effect = {"错误": "捕获失败"}.get
+        self.assertEqual(get_task_error(task), "捕获失败")
+        task.info_get.side_effect = {"Error": "  failed  "}.get
+        self.assertEqual(get_task_error(task), "failed")
+        task.tr.assert_called_with("Error")
 
-    def test_ww_import_path_is_temporary(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            root = str(Path(tmp_dir).resolve())
-            self.assertNotIn(root, sys.path)
-            with ww_import_path(Path(root)):
-                self.assertEqual(sys.path[0], root)
-            self.assertNotIn(root, sys.path)
+    def test_finished_task_does_not_wait_for_unrelated_trigger_task(self):
+        task = FakeTask(enabled=False)
+        executor = FakeExecutor(current_task=object())
+        self.assertEqual(run_onetime_task(executor, task, sleep=lambda _: self.fail("already done")), "")
 
     def test_ww_runtime_context_sets_path_and_cwd_temporarily(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

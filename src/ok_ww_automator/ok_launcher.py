@@ -221,6 +221,11 @@ def run_onetime_task(
     monotonic: Callable[[], float] = time.monotonic,
     on_poll: Callable[[], None] | None = None,
 ) -> str:
+    # Headless callers own post-task OCR and cleanup. A saved GUI preference
+    # must not shut down the game before those reads finish.
+    task.exit_after_task = False
+    if task.config.get("Exit After Task"):
+        task.config["Exit After Task"] = False
     task.enable()
     task.unpause()
     deadline = monotonic() + timeout_seconds
@@ -229,8 +234,7 @@ def run_onetime_task(
             on_poll()
         if executor.exit_event.is_set():
             raise OkLaunchError("Executor exit event set before task finished")
-        if not task.enabled and executor.current_task is None:
-            task.running = False
+        if not task.enabled and executor.current_task is not task:
             if error := get_task_error(task):
                 return f"{task.name}: {error}"
             return ""
@@ -241,11 +245,12 @@ def run_onetime_task(
 def get_task_error(task: Any) -> str | None:
     keys = ["Error", "error"]
     try:
-        from PySide6.QtCore import QCoreApplication
-
-        translated = QCoreApplication.tr("app", "Error")
-        keys.insert(0, translated)
-    except Exception:
+        # The executor uses the task application's translator, including the
+        # gettext-based headless app. Qt's translator is not equivalent.
+        translated = task.tr("Error")
+        if isinstance(translated, str):
+            keys.insert(0, translated)
+    except (AttributeError, TypeError):
         pass
 
     for key in dict.fromkeys(keys):

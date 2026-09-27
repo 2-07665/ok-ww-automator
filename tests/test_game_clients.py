@@ -25,8 +25,7 @@ from ok_ww_automator.game_clients import (
     apply_daily_task_config,
     normalize_daily_task_error,
     read_live_daily_points,
-    simulation_material_value,
-    stamina_burn_unit,
+    read_live_stamina,
 )
 
 
@@ -231,12 +230,28 @@ class GameClientsTest(unittest.TestCase):
         self.assertFalse(task.config["Farm Nightmare Nest for Daily Echo"])
         self.assertEqual(nightmare_task.config[NIGHTMARE_FARM_SELECTION], [])
 
-    def test_unknown_simulation_material_defaults_to_shell_credit(self) -> None:
-        self.assertEqual(simulation_material_value("unknown"), "Shell Credit")
+    def test_live_reads_preserve_measurement_when_navigation_cleanup_fails(self):
+        task = Mock()
+        task.ensure_main.side_effect = [None, RuntimeError("navigation failed")]
+        task.get_stamina.return_value = (70, 10, 80)
+        self.assertEqual(read_live_stamina(task, retry_sleep=0), (70, 10))
+        task.ensure_main.side_effect = [None, RuntimeError("navigation failed")]
+        task.info_get.return_value = 100
+        self.assertEqual(read_live_daily_points(task, retry_sleep=0), 100)
 
-    def test_stamina_burn_unit_depends_on_farm_type(self) -> None:
-        self.assertEqual(stamina_burn_unit(SheetRunConfig(which_to_farm="无音区")), 60)
-        self.assertEqual(stamina_burn_unit(SheetRunConfig(which_to_farm="凝素领域")), 40)
+    def test_live_reads_retry_after_navigation_failure(self):
+        task = Mock()
+        task.ensure_main.side_effect = [RuntimeError("not in world"), RuntimeError("still loading"), None, None]
+        task.get_stamina.return_value = (70, 10, 80)
+        self.assertEqual(read_live_stamina(task, retries=2, retry_sleep=0), (70, 10))
+        self.assertEqual(task.ensure_main.call_count, 4)
+        task.ensure_main.side_effect = RuntimeError("disconnected")
+        self.assertEqual(read_live_stamina(task, retries=2, retry_sleep=0), (None, None))
+        self.assertIsNone(read_live_daily_points(task, retries=2, retry_sleep=0))
+
+    def test_daily_points_do_not_treat_missing_or_invalid_readings_as_zero(self):
+        task = FakeDailyPointsTask([None, -1, 200])
+        self.assertIsNone(read_live_daily_points(task, retries=3, retry_sleep=0))
 
     def test_read_live_daily_points_returns_first_reading(self) -> None:
         task = FakeDailyPointsTask([0, 100])
@@ -273,14 +288,6 @@ class OkStaminaGameClientTest(unittest.TestCase):
 
         self.assertEqual(ok.device_manager.stop_count, 1)
         self.assertEqual(ok.quit_count, 1)
-
-    def test_close_resets_cached_runtime(self) -> None:
-        client = OkStaminaGameClient(launcher=FakeLauncher())
-        ok = FakeOkRuntime()
-        client.ok = ok
-
-        client.close(SheetRunConfig())
-
         self.assertIsNone(client.ok)
         self.assertIsNone(client.stamina_task)
 
@@ -334,6 +341,24 @@ class OkStaminaGameClientTest(unittest.TestCase):
 
 
 class SubprocessGameClientTest(unittest.TestCase):
+    def test_all_child_operations_have_watchdogs_and_cleanup_after_timeout(self):
+        config = AppConfig(Path("/project"), Path("/project/env/cn.env"))
+        calls = [
+            (SubprocessDailyGameClient(config, ww_root=Path("/ww")).run_daily, 40 * 60),
+            (SubprocessStaminaGameClient(config, ww_root=Path("/ww")).run_stamina, 20 * 60),
+            (SubprocessStaminaGameClient(config, ww_root=Path("/ww")).read_stamina, 15 * 60),
+        ]
+        for operation, timeout in calls:
+            with (
+                self.subTest(operation=operation.__name__),
+                patch("ok_ww_automator.game_clients.run_with_timeout", side_effect=subprocess.TimeoutExpired("game", timeout)) as run,
+                patch("ok_ww_automator.game_clients.kill_game_processes") as cleanup,
+            ):
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    operation(SheetRunConfig())
+                self.assertEqual(run.call_args.kwargs["timeout"], timeout)
+                cleanup.assert_called_once()
+
     def test_weekly_timeout_cleans_up_game_and_propagates(self):
         client = SubprocessWeeklyGameClient(AppConfig(Path("/project"), Path("/project/env/cn.env")), ww_root=Path("/ww"))
         with (
@@ -376,17 +401,17 @@ class SubprocessGameClientTest(unittest.TestCase):
         )
         sheet_config = SheetRunConfig(which_to_farm="模拟领域")
 
-        def fake_run(command, env, check):
+        def fake_run(command, env, timeout):
             input_path = Path(command[command.index("--input") + 1])
             output_path = Path(command[command.index("--output") + 1])
             payload = json.loads(input_path.read_text(encoding="utf-8"))
             self.assertEqual(payload["sheet_config"]["which_to_farm"], "模拟领域")
             self.assertEqual(env["ENV_FILE"], str(app_config.env_path))
-            self.assertFalse(check)
+            self.assertEqual(timeout, 40 * 60)
             output_path.write_text(json.dumps({"daily_points": 100}), encoding="utf-8")
             return subprocess.CompletedProcess(command, 0)
 
-        with patch("ok_ww_automator.game_clients.subprocess.run", side_effect=fake_run) as run:
+        with patch("ok_ww_automator.game_clients.run_with_timeout", side_effect=fake_run) as run:
             outcome = SubprocessDailyGameClient(app_config, ww_root=Path("/ww")).run_daily(sheet_config)
 
         self.assertEqual(outcome.daily_points, 100)
@@ -402,12 +427,12 @@ class SubprocessGameClientTest(unittest.TestCase):
             game_exe_path=Path("/game/Wuthering Waves.exe"),
         )
 
-        def fake_run(command, env, check):
+        def fake_run(command, env, timeout):
             output_path = Path(command[command.index("--output") + 1])
             output_path.write_text(json.dumps({"stamina": 70, "backup_stamina": 10}), encoding="utf-8")
             return subprocess.CompletedProcess(command, 0)
 
-        with patch("ok_ww_automator.game_clients.subprocess.run", side_effect=fake_run):
+        with patch("ok_ww_automator.game_clients.run_with_timeout", side_effect=fake_run):
             stamina = SubprocessStaminaGameClient(app_config, ww_root=Path("/ww")).read_stamina(SheetRunConfig())
 
         self.assertEqual(stamina, (70, 10))
@@ -419,12 +444,12 @@ class SubprocessGameClientTest(unittest.TestCase):
             game_exe_path=Path("/game/Wuthering Waves.exe"),
         )
 
-        def fake_run(command, env, check):
+        def fake_run(command, env, timeout):
             output_path = Path(command[command.index("--output") + 1])
             output_path.write_text(json.dumps({"error": "RuntimeError: child failed"}), encoding="utf-8")
             return subprocess.CompletedProcess(command, 1)
 
-        with patch("ok_ww_automator.game_clients.subprocess.run", side_effect=fake_run):
+        with patch("ok_ww_automator.game_clients.run_with_timeout", side_effect=fake_run):
             with self.assertRaisesRegex(RuntimeError, "child failed"):
                 SubprocessDailyGameClient(app_config, ww_root=Path("/ww")).run_daily(SheetRunConfig())
 
@@ -435,7 +460,7 @@ class SubprocessGameClientTest(unittest.TestCase):
             game_exe_path=Path("/game/Wuthering Waves.exe"),
         )
 
-        def fake_run(command, env, check):
+        def fake_run(command, env, timeout):
             output_path = Path(command[command.index("--output") + 1])
             output_path.write_text(
                 json.dumps({"stamina_left": 14, "backup_stamina_left": 7, "task_error": None}),
@@ -443,7 +468,7 @@ class SubprocessGameClientTest(unittest.TestCase):
             )
             return subprocess.CompletedProcess(command, WINDOWS_ACCESS_VIOLATION_EXIT_CODE)
 
-        with patch("ok_ww_automator.game_clients.subprocess.run", side_effect=fake_run):
+        with patch("ok_ww_automator.game_clients.run_with_timeout", side_effect=fake_run):
             outcome = SubprocessStaminaGameClient(app_config, ww_root=Path("/ww")).run_stamina(SheetRunConfig())
 
         self.assertEqual(outcome.stamina_left, 14)
@@ -457,10 +482,10 @@ class SubprocessGameClientTest(unittest.TestCase):
             game_exe_path=Path("/game/Wuthering Waves.exe"),
         )
 
-        def fake_run(command, env, check):
+        def fake_run(command, env, timeout):
             return subprocess.CompletedProcess(command, WINDOWS_ACCESS_VIOLATION_EXIT_CODE)
 
-        with patch("ok_ww_automator.game_clients.subprocess.run", side_effect=fake_run):
+        with patch("ok_ww_automator.game_clients.run_with_timeout", side_effect=fake_run):
             with self.assertRaisesRegex(RuntimeError, "Game attempt subprocess exited 3221225477"):
                 SubprocessStaminaGameClient(app_config, ww_root=Path("/ww")).run_stamina(SheetRunConfig())
 

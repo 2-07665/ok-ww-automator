@@ -43,10 +43,12 @@ class FastFarmEchoTask(BaseWWTask):
 
     def simple_pickup_echo(self):
         self.send_key('f', after_sleep=0.3)
-        time.sleep(2.4)
+        self.sleep(2.4)
 
     def my_farm_once(self):
-        self.wait_until(self.simple_in_combat, time_out=300, raise_if_not_found=False)
+        # A missing boss is a failed attempt, not a completed fight. Do not
+        # attack blindly or inflate the count after a detection timeout.
+        self.wait_until(self.simple_in_combat, time_out=300, raise_if_not_found=True)
         self._fixed_char.one_shot()
         while self.simple_in_combat():
             self._fixed_char.fight()
