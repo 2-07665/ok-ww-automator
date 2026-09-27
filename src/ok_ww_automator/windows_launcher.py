@@ -23,13 +23,14 @@ except ModuleNotFoundError:  # Headless test environments may omit the optional 
 
 from .config import ConfigError, read_dotenv
 from .env_discovery import AccountEnv, discover_account_envs
+from .time_utils import parse_time_of_day
 
 
 APP_NAME = "OK Automator Launcher"
 MAX_LOG_LINES = 1_000
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 DEFAULT_WINDOW_SIZE = (1_200, 900)
-MINIMUM_WINDOW_SIZE = (950, 720)
+MINIMUM_WINDOW_SIZE = (950, 800)
 MINIMUM_ACCOUNT_TABLE_HEIGHT = 190
 MINIMUM_LOG_HEIGHT = 260
 GAME_LAUNCH_COOLDOWN_MS = 3_000
@@ -121,6 +122,14 @@ def build_ok_gui_command(paths: LauncherPaths) -> list[str]:
         "ok_ww_automator.ok_main",
         "--ww-root",
         str(paths.upstream_root),
+    ]
+
+
+def build_auto_farm_command(paths: LauncherPaths, stop_time: str) -> list[str]:
+    stop_time = parse_time_of_day(stop_time).strftime("%H:%M")
+    return [
+        str(paths.python_exe), "-m", "ok_ww_automator.auto_farm",
+        "--ww-root", str(paths.upstream_root), "--stop-time", stop_time,
     ]
 
 
@@ -333,6 +342,7 @@ class LauncherApp:
 
         self.status_text = tk.StringVar(value="Initializing…")
         self.mode = tk.StringVar(value="daily")
+        self.farm_stop_time = tk.StringVar(value="03:00")
         self._configure_window()
         self._build_widgets()
         self._load_workspace()
@@ -362,8 +372,8 @@ class LauncherApp:
         self.root.rowconfigure(0, weight=1)
         self.root.columnconfigure(0, weight=1)
         outer.columnconfigure(0, weight=1)
-        outer.rowconfigure(3, weight=2, minsize=MINIMUM_ACCOUNT_TABLE_HEIGHT)
-        outer.rowconfigure(6, weight=3, minsize=MINIMUM_LOG_HEIGHT)
+        outer.rowconfigure(4, weight=2, minsize=MINIMUM_ACCOUNT_TABLE_HEIGHT)
+        outer.rowconfigure(7, weight=3, minsize=MINIMUM_LOG_HEIGHT)
 
         ttk.Label(outer, text=APP_NAME, style="Title.TLabel").grid(row=0, column=0, sticky="w")
         self.ok_button = ttk.Button(outer, text="Launch OK GUI", command=self._launch_ok_gui)
@@ -378,9 +388,18 @@ class LauncherApp:
         self.scheduler_button = ttk.Button(mode_frame, text="Run selected accounts", command=self._launch_scheduler)
         self.scheduler_button.pack(side="right")
 
-        ttk.Label(outer, text="Accounts (run top to bottom)").grid(row=2, column=0, columnspan=2, sticky="w")
+        farm_frame = ttk.LabelFrame(outer, text="Auto Farm — current game", padding=8)
+        farm_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        ttk.Label(farm_frame, text="Stop and shut down at (Beijing time):").pack(side="left")
+        self.farm_time_entry = ttk.Entry(farm_frame, textvariable=self.farm_stop_time, width=7)
+        self.farm_time_entry.pack(side="left", padx=8)
+        ttk.Label(farm_frame, text="Prepare character and position first.").pack(side="left")
+        self.farm_button = ttk.Button(farm_frame, text="Start Auto Farm", command=self._launch_auto_farm)
+        self.farm_button.pack(side="right")
+
+        ttk.Label(outer, text="Accounts (run top to bottom)").grid(row=3, column=0, columnspan=2, sticky="w")
         account_frame = ttk.Frame(outer)
-        account_frame.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(4, 0))
+        account_frame.grid(row=4, column=0, columnspan=2, sticky="nsew", pady=(4, 0))
         account_frame.rowconfigure(0, weight=1)
         account_frame.columnconfigure(0, weight=1)
         self.account_table = ttk.Treeview(
@@ -401,7 +420,7 @@ class LauncherApp:
         self.account_table.bind("<<TreeviewSelect>>", lambda _event: self._sync_controls())
 
         controls = ttk.Frame(outer)
-        controls.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(6, 10))
+        controls.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(6, 10))
         self.account_buttons = [
             ttk.Button(controls, text="Select All", command=self._select_all),
             ttk.Button(controls, text="Clear", command=self._clear_selection),
@@ -421,7 +440,7 @@ class LauncherApp:
             )
 
         status_frame = ttk.Frame(outer)
-        status_frame.grid(row=5, column=0, columnspan=2, sticky="ew")
+        status_frame.grid(row=6, column=0, columnspan=2, sticky="ew")
         status_frame.columnconfigure(0, weight=1)
         ttk.Label(status_frame, textvariable=self.status_text, relief="sunken", anchor="w", style="Status.TLabel").grid(
             row=0, column=0, sticky="ew"
@@ -430,7 +449,7 @@ class LauncherApp:
         self.stop_button.grid(row=0, column=1, padx=(8, 0))
 
         log_frame = ttk.LabelFrame(outer, text="Live log", padding=6)
-        log_frame.grid(row=6, column=0, columnspan=2, sticky="nsew", pady=(8, 0))
+        log_frame.grid(row=7, column=0, columnspan=2, sticky="nsew", pady=(8, 0))
         log_frame.rowconfigure(0, weight=1)
         log_frame.columnconfigure(0, weight=1)
         self.log = tk.Text(log_frame, wrap="word", state="disabled", height=12, font=("Consolas", 9))
@@ -496,6 +515,16 @@ class LauncherApp:
         if self.paths is None:
             return
         self._start_operation("OK GUI", build_ok_gui_command(self.paths))
+
+    def _launch_auto_farm(self) -> None:
+        if self.paths is None:
+            return
+        try:
+            command = build_auto_farm_command(self.paths, self.farm_stop_time.get())
+        except ValueError as exc:
+            messagebox.showwarning(APP_NAME, str(exc), parent=self.root)
+            return
+        self._start_operation("Auto Farm", command)
 
     def _launch_scheduler(self) -> None:
         if self.paths is None:
@@ -617,6 +646,8 @@ class LauncherApp:
         selection_count = len(self.account_table.selection())
         selected = selection_count > 0
         self.ok_button.configure(state="normal" if valid and not active else "disabled")
+        self.farm_button.configure(state="normal" if valid and not active else "disabled")
+        self.farm_time_entry.configure(state="disabled" if active else "normal")
         self.scheduler_button.configure(state="normal" if valid and selected and not active else "disabled")
         self.stop_button.configure(state="normal" if active else "disabled")
         state = "disabled" if active else "normal"

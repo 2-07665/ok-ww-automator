@@ -180,6 +180,13 @@ def validate_time_of_day(hour: int, minute: int) -> None:
         raise ValueError("minute must be between 0 and 59")
 
 
+def parse_time_of_day(value: str) -> dt.time:
+    try:
+        return dt.datetime.strptime(value.strip(), "%H:%M").time()
+    except ValueError as exc:
+        raise ValueError("Time must be HH:MM, between 00:00 and 23:59.") from exc
+
+
 def _ensure_aware(value: dt.datetime) -> dt.datetime:
     if value.tzinfo is not None:
         return value

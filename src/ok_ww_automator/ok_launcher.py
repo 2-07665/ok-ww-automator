@@ -255,6 +255,49 @@ def get_task_error(task: Any) -> str | None:
     return None
 
 
+def run_auto_farm(ww_root: Path, *, stop_at: float) -> None:
+    """Run fixed-position farming against the already open game until a monotonic deadline."""
+    with ww_runtime_context(ww_root):
+        from ok import OK
+        from config import config
+        from .ok_tasks.fast_farm_echo import FastFarmEchoTask
+
+        headless_config = dict(config)
+        headless_config.pop("gui", None)
+        headless_config["use_gui"] = False
+        headless_config["onetime_tasks"] = [["ok_ww_automator.ok_tasks.fast_farm_echo", "FastFarmEchoTask"]]
+        headless_config["trigger_tasks"] = []
+        ok = OK(headless_config)
+        try:
+            ready_deadline = min(stop_at, time.monotonic() + 120)
+            while time.monotonic() < ready_deadline:
+                refresh_and_select_connected_device(ok.device_manager)
+                if is_ok_ready(ok):
+                    break
+                time.sleep(1)
+            else:
+                raise OkLaunchError("Current game is not ready. Open the game and prepare the farming position first.")
+
+            task = ok.task_executor.get_task_by_class(FastFarmEchoTask)
+            task.stop_at = stop_at
+            ok.task_executor.start()
+            try:
+                error = run_onetime_task(
+                    ok.task_executor, task,
+                    timeout_seconds=max(0, stop_at - time.monotonic()), poll_seconds=1,
+                )
+            except TimeoutError:
+                task.disable()
+            else:
+                if error:
+                    raise OkLaunchError(error)
+                if time.monotonic() < stop_at:
+                    raise OkLaunchError("Auto Farm stopped before the scheduled end time.")
+            print(f"Auto Farm finished. Fight Count: {task.info_get('Fight Count')}", flush=True)
+        finally:
+            ok.quit()
+
+
 def load_runtime_imports(ww_root: Path) -> RuntimeImports:
     with ww_import_path(ww_root):
         config_module = importlib.import_module("config")

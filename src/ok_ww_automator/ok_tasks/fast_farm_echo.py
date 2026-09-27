@@ -19,6 +19,7 @@ class FastFarmEchoTask(BaseWWTask):
         self.name = "固定4C速刷"
         self.group_name = "My"
         self.default_config = {"刷多少次": 2000}
+        self.stop_at = None
         self._fixed_char = Cartethyia(self)
         self._in_combat = False
         self.combat_check_grace_window = 1.0
@@ -34,8 +35,10 @@ class FastFarmEchoTask(BaseWWTask):
         self.ensure_main(esc=True, time_out= 60)
         self.run_until(self.simple_in_combat, "w", time_out=10, running=True)
 
-        for idx in range(farm_target):
-            self.log_info(f"战斗: {idx + 1}/{farm_target}")
+        idx = 0
+        while time.monotonic() < self.stop_at if self.stop_at is not None else idx < farm_target:
+            idx += 1
+            self.log_info(f"战斗: {idx}" if self.stop_at is not None else f"战斗: {idx}/{farm_target}")
             self.my_farm_once()
 
     def simple_pickup_echo(self):
