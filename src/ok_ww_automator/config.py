@@ -7,7 +7,9 @@ be installed yet.
 
 from __future__ import annotations
 
+import math
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping
@@ -249,7 +251,7 @@ def read_dotenv(path: Path) -> dict[str, str]:
         return {}
 
     values: dict[str, str] = {}
-    for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    for line_number, raw_line in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), start=1):
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
@@ -310,7 +312,10 @@ def _unquote_dotenv_value(raw: str) -> str:
         return raw
     value = raw[1:-1]
     if quote == '"':
-        value = value.encode("utf-8").decode("unicode_escape")
+        # Decode only dotenv escapes, never reinterpret UTF-8 bytes as Latin-1
+        # or treat Windows path components such as \Users as Unicode escapes.
+        escapes = {"n": "\n", "r": "\r", "t": "\t", '"': '"', "\\": "\\"}
+        value = re.sub(r'\\([nrt"\\])', lambda match: escapes[match[1]], value)
     return value
 
 
@@ -365,7 +370,7 @@ def _float_value(
         value = float(raw)
     except ValueError as exc:
         raise ConfigError(f"{name} must be a number") from exc
-    if value < minimum or value > maximum:
+    if not math.isfinite(value) or value < minimum or value > maximum:
         raise ConfigError(f"{name} must be between {minimum:g} and {maximum:g}")
     return value
 

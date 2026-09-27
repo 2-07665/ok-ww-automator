@@ -411,6 +411,63 @@ class FakeHealthcheckMonitor:
 
 
 class DailyRunnerTest(unittest.TestCase):
+    def test_daily_failed_retry_preserves_partial_metrics_and_actual_end_time(self):
+        game = Mock()
+        game.run_daily.side_effect = [
+            DailyGameOutcome(240, 0, 120, 0, 50, "first attempt failed"),
+            RuntimeError("second attempt failed"),
+        ]
+        observed = FIXED_NOW + dt.timedelta(minutes=10)
+        ended = FIXED_NOW + dt.timedelta(minutes=20)
+        with patch("ok_ww_automator.runners.now", side_effect=[FIXED_NOW, observed, ended]):
+            result = DailyRunner(store=FakeStore(), game_client=game,
+                                 retry_config=RetryConfig(2, 0)).run()
+        self.assertEqual(result.status, "failure")
+        self.assertEqual(result.ended_at, ended)
+        self.assertEqual(result.stamina_used, 120)
+        self.assertIn("second attempt failed", result.error)
+
+    def test_daily_retry_reports_stamina_consumed_across_both_attempts(self):
+        game = Mock()
+        game.run_daily.side_effect = [
+            DailyGameOutcome(240, 0, 120, 0, 50, "first attempt failed"),
+            DailyGameOutcome(120, 0, 60, 0, 100),
+        ]
+        result = DailyRunner(store=FakeStore(), game_client=game,
+                             retry_config=RetryConfig(2, 0)).run()
+        self.assertEqual(result.status, "success")
+        self.assertEqual((result.stamina_start, result.stamina_left, result.stamina_used), (240, 60, 180))
+
+    def test_api_cleanup_failure_still_persists_notifies_and_shuts_down(self):
+        store = FakeStore(SheetRunConfig(shutdown_after_daily=True))
+        api = FakeApiClient()
+        api.close = Mock(side_effect=RuntimeError("API close failed"))
+        notice = FakeNoticeClient()
+        power = FakePowerController()
+        monitor = FakeHealthcheckMonitor()
+        result = DailyRunner(
+            store=store, game_client=FakeGameClient(DailyGameOutcome(daily_points=100)),
+            api_client=api, notice_client=notice, power_controller=power,
+            healthcheck_monitor=monitor,
+        ).run()
+        self.assertEqual(result.status, "success")
+        self.assertIn("API close failed", result.decision)
+        self.assertEqual(store.daily_results, [result])
+        self.assertEqual(notice.calls, [(result, store.sheet_config)])
+        self.assertEqual(monitor.calls[-1], ("complete", "success"))
+        self.assertEqual(power.requests, ["daily"])
+
+    def test_missing_final_stamina_does_not_reuse_initial_api_reading(self):
+        api = FakeApiClient(info=WavesDailyInfo(180, 30, 20))
+        result = DailyRunner(
+            store=FakeStore(), api_client=api,
+            game_client=FakeGameClient(DailyGameOutcome(daily_points=100)),
+        ).run()
+        self.assertEqual(result.stamina_start, 180)
+        self.assertIsNone(result.stamina_left)
+        self.assertIsNone(result.backup_stamina_left)
+        self.assertIsNone(result.stamina_used)
+
     def test_skip_daily_once_clears_flag_and_persists_skipped_result(self) -> None:
         store = FakeStore(SheetRunConfig(skip_daily_once=True, run_nightmare=True))
         game = FakeGameClient()
@@ -638,6 +695,51 @@ class DailyRunnerTest(unittest.TestCase):
 
 
 class StaminaRunnerTest(unittest.TestCase):
+    def test_partial_burn_then_no_burn_retains_consumption_and_failed_outcome(self):
+        game = Mock()
+        game.read_stamina.side_effect = [(240, 0), (60, 0)]
+        game.run_stamina.return_value = StaminaGameOutcome(60, 0, "reward collection failed")
+        with patch("ok_ww_automator.runners.now", return_value=dt.datetime(2026, 5, 16, 4, tzinfo=BEIJING_TZ)):
+            result = StaminaRunner(store=FakeStore(), game_client=game,
+                                   retry_config=RetryConfig(2, 0)).run()
+        self.assertEqual(result.status, "needs review")
+        self.assertEqual(result.error, "reward collection failed")
+        self.assertEqual((result.stamina_start, result.stamina_left, result.stamina_used), (240, 60, 180))
+        game.run_stamina.assert_called_once()
+
+    def test_cleanup_failures_preserve_original_error_and_complete_reporting(self):
+        store = FakeStore(SheetRunConfig(shutdown_after_stamina=True))
+        api = FakeApiClient()
+        api.close = Mock(side_effect=RuntimeError("API close failed"))
+        game = FakeStaminaGameClient(read_exc=RuntimeError("original read error"))
+        game.close = Mock(side_effect=RuntimeError("game close failed"))
+        notice = FakeNoticeClient()
+        power = FakePowerController()
+        monitor = FakeHealthcheckMonitor()
+        result = StaminaRunner(
+            store=store, game_client=game, api_client=api, notice_client=notice,
+            power_controller=power, healthcheck_monitor=monitor,
+            retry_config=RetryConfig(1, 0),
+        ).run()
+        self.assertEqual(result.status, "failure")
+        self.assertIn("original read error", result.error)
+        self.assertIn("API close failed", result.decision)
+        self.assertIn("game close failed", result.decision)
+        self.assertEqual(store.stamina_results, [result])
+        self.assertEqual(notice.calls, [(result, store.sheet_config)])
+        self.assertEqual(monitor.calls[-1], ("complete", "failure"))
+        self.assertEqual(power.requests, ["stamina"])
+
+    def test_burn_prediction_uses_time_after_slow_stamina_read(self):
+        started = dt.datetime(2026, 5, 16, 4, 0, tzinfo=BEIJING_TZ)
+        observed = started + dt.timedelta(minutes=30)
+        game = FakeStaminaGameClient(stamina=(231, 0))
+        with patch("ok_ww_automator.runners.now", side_effect=[started, observed, observed]):
+            result = StaminaRunner(store=FakeStore(), game_client=game).run()
+        self.assertEqual(result.status, "skipped")
+        self.assertEqual(game.run_configs, [])
+        self.assertEqual(result.ended_at, observed)
+
     def test_skip_stamina_once_clears_flag_and_persists_skipped_result(self) -> None:
         store = FakeStore(SheetRunConfig(skip_stamina_once=True))
         game = FakeStaminaGameClient()

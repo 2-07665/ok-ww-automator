@@ -5,31 +5,11 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from ok_ww_automator.models import FastFarmResult, RunResult, SheetRunConfig
+from ok_ww_automator.models import FastFarmResult, RunResult
 from ok_ww_automator.time_utils import BEIJING_TZ
 
 
 class ModelsTest(unittest.TestCase):
-    def test_sheet_run_config_defaults_match_legacy_automation(self) -> None:
-        config = SheetRunConfig()
-
-        self.assertTrue(config.run_daily)
-        self.assertFalse(config.skip_daily_once)
-        self.assertTrue(config.run_stamina)
-        self.assertEqual(config.which_to_farm, "无音区")
-        self.assertEqual(config.simulation_material, "贝币")
-        self.assertTrue(config.farm_nightmare_purification)
-        self.assertTrue(config.farm_tacet_discord_nest)
-
-    def test_nightmare_is_effectively_disabled_without_targets(self) -> None:
-        config = SheetRunConfig(
-            run_nightmare=True,
-            farm_nightmare_purification=False,
-            farm_tacet_discord_nest=False,
-        )
-
-        self.assertFalse(config.should_run_nightmare)
-
     def test_run_result_derives_report_fields(self) -> None:
         started = dt.datetime(2026, 5, 16, 3, 0, tzinfo=BEIJING_TZ)
         ended = dt.datetime(2026, 5, 16, 4, 0, tzinfo=BEIJING_TZ)

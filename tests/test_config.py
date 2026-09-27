@@ -157,6 +157,21 @@ class ConfigTest(unittest.TestCase):
             },
         )
 
+    def test_dotenv_preserves_unicode_windows_paths_and_utf8_bom(self) -> None:
+        dotenv = self.tmp / "account.env"
+        dotenv.write_text(
+            'NOTICE_ACCOUNT_ID="中文账号"\nGAME_EXE_PATH="C:\\Users\\玩家\\Game.exe"\n',
+            encoding="utf-8-sig",
+        )
+        config = load_config(env={}, project_root=self.tmp, env_file=dotenv)
+        self.assertEqual(config.notice.account_id, "中文账号")
+        self.assertEqual(config.game_exe_path, Path(r"C:\Users\玩家\Game.exe"))
+
+    def test_retry_delay_rejects_nonfinite_values(self) -> None:
+        for value in ("nan", "NaN", "inf", "-inf"):
+            with self.subTest(value=value), self.assertRaises(ConfigError):
+                load_config(env={"RETRY_DELAY_SECONDS": value}, project_root=self.tmp)
+
     def test_require_methods_fail_lazily(self) -> None:
         config = load_config(env={}, project_root=self.tmp)
 

@@ -70,6 +70,7 @@ def main(argv: list[str] | None = None) -> int:
             run_stamina_weekly_jobs(
                 plan.jobs, project_root=project_root, env_dir=env_dir, ww_root=ww_root,
                 ww_remote=args.ww_remote, ww_branch=args.ww_branch,
+                run_now=args.run_now,
             )
             return 0
         run_jobs(
@@ -101,8 +102,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--ww-remote", default="origin")
     parser.add_argument("--ww-branch", default="master")
     args = parser.parse_args(argv)
-    if args.shutdown_request_file and (args.mode != "stamina" or len(args.account or []) != 1):
-        parser.error("--shutdown-request-file requires --mode stamina and exactly one --account")
+    if args.shutdown_request_file and (args.mode not in {"daily", "stamina"} or len(args.account or []) != 1):
+        parser.error("--shutdown-request-file requires --mode daily or stamina and exactly one --account")
     return args
 
 
@@ -115,7 +116,7 @@ def build_scheduler_plan(
     skip_update: bool,
     ww_root: Path,
     ww_remote: str = "origin",
-    ww_branch: str = "my",
+    ww_branch: str = "master",
 ) -> SchedulerPlan:
     accounts = select_accounts(discover_account_envs(env_dir), selected_accounts)
     if not accounts:
@@ -181,24 +182,11 @@ def run_jobs(
                     shutdown_request_file=shutdown_request_file)
         return
 
-    errors: list[str] = []
-    for job in jobs:
-        try:
-            weekly_options = {"run_now": run_now, "skip_update": skip_update} if job.mode == "weekly" else {}
-            run_job_subprocess(
-                job,
-                project_root=project_root,
-                env_dir=env_dir,
-                ww_root=ww_root,
-                ww_remote=ww_remote,
-                ww_branch=ww_branch,
-                **weekly_options,
-            )
-        except subprocess.CalledProcessError as exc:
-            errors.append(f"{job.account.account_id}/{job.mode}: exited {exc.returncode}")
-
-    if errors:
-        raise RuntimeError(f"{len(errors)} job(s) failed: " + "; ".join(errors))
+    run_isolated_jobs(
+        jobs, project_root=project_root, env_dir=env_dir, ww_root=ww_root,
+        ww_remote=ww_remote, ww_branch=ww_branch, run_now=run_now,
+        skip_update=skip_update, shutdown_reason=jobs[0].mode if jobs else "scheduler",
+    )
 
 
 def run_job_subprocess(
@@ -246,27 +234,43 @@ def run_job_subprocess(
 def run_stamina_weekly_jobs(
     jobs: tuple[SchedulerJob, ...], *, project_root: Path, env_dir: Path,
     ww_root: Path, ww_remote: str, ww_branch: str,
+    run_now: bool = False,
+) -> None:
+    run_isolated_jobs(
+        jobs, project_root=project_root, env_dir=env_dir, ww_root=ww_root,
+        ww_remote=ww_remote, ww_branch=ww_branch, run_now=run_now,
+        shutdown_reason="stamina-weekly",
+    )
+
+
+def run_isolated_jobs(
+    jobs: tuple[SchedulerJob, ...], *, project_root: Path, env_dir: Path,
+    ww_root: Path, ww_remote: str, ww_branch: str, shutdown_reason: str,
+    run_now: bool = False, skip_update: bool = True,
 ) -> None:
     errors = []
     with tempfile.TemporaryDirectory(prefix="ok-ww-shutdown-") as directory:
         shutdown_request = Path(directory) / "requested.txt"
         try:
-            # Plan order is all stamina accounts (including their Healthchecks),
-            # then all weekly accounts. Each runner remains process-isolated.
+            # Defer every account's shutdown until the whole batch finishes,
+            # including when an earlier account fails or cannot start.
             for job in jobs:
                 try:
                     run_job_subprocess(
                         job, project_root=project_root, env_dir=env_dir, ww_root=ww_root,
                         ww_remote=ww_remote, ww_branch=ww_branch,
-                        shutdown_request_file=shutdown_request if job.mode == "stamina" else None,
+                        run_now=run_now if job.mode == "weekly" else False,
+                        skip_update=skip_update if job.mode == "weekly" else True,
+                        shutdown_request_file=shutdown_request if job.mode in {"daily", "stamina"} else None,
                     )
                 except Exception as exc:
-                    message = f"{job.account.account_id}/{job.mode}: {exc}"
+                    detail = f"exited {exc.returncode}" if isinstance(exc, subprocess.CalledProcessError) else str(exc)
+                    message = f"{job.account.account_id}/{job.mode}: {detail}"
                     errors.append(message)
                     print(f"ERROR: {message}", file=sys.stderr)
         finally:
             if shutdown_request.exists():
-                SystemPowerController().request_shutdown("stamina-weekly")
+                SystemPowerController().request_shutdown(shutdown_reason)
     if errors:
         raise RunnerError(f"{len(errors)} job(s) failed: " + "; ".join(errors))
 

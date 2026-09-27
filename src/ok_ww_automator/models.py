@@ -160,6 +160,7 @@ class RunResult:
 
     def fill_stamina_used(self) -> None:
         if None in (self.stamina_start, self.backup_stamina_start, self.stamina_left, self.backup_stamina_left):
+            self.stamina_used = None
             return
         start_total = (self.stamina_start or 0) + (self.backup_stamina_start or 0)
         end_total = (self.stamina_left or 0) + (self.backup_stamina_left or 0)

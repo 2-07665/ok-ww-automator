@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from ok_ww_automator.env_discovery import AccountEnv
 from ok_ww_automator.models import RunResult, SheetRunConfig
 from ok_ww_automator.time_utils import now
-from ok_ww_automator.scheduler import SchedulerJob, build_scheduler_plan, main, resolve_modes, run_job, run_jobs
+from ok_ww_automator.scheduler import SchedulerJob, build_scheduler_plan, main, run_job, run_jobs
 
 
 class SchedulerTest(unittest.TestCase):
@@ -63,6 +63,41 @@ class SchedulerTest(unittest.TestCase):
         self.assertEqual(calls, ["stamina", "stamina", "weekly", "weekly"])
         power.assert_not_called()
 
+    def test_each_batch_mode_defers_shutdown_until_all_accounts_finish(self):
+        for mode in ("daily", "stamina"):
+            with self.subTest(mode=mode):
+                events = []
+                store = Mock()
+                store.fetch_run_config_or_default.return_value = (
+                    SheetRunConfig(run_daily=False, run_stamina=False,
+                                   shutdown_after_daily=True, shutdown_after_stamina=True), None
+                )
+                def child(job, **kwargs):
+                    events.append(job.account.account_id)
+                    run_job(job, project_root=self.tmp, ww_root=self.tmp / "ww",
+                            shutdown_request_file=kwargs["shutdown_request_file"])
+                    if job.account.account_id == "cn":
+                        raise subprocess.CalledProcessError(7, "child")
+                with (
+                    contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()),
+                    patch("ok_ww_automator.scheduler.run_job_subprocess", side_effect=child),
+                    patch("ok_ww_automator.runners.GoogleSheetsStore.from_config", return_value=store),
+                    patch("ok_ww_automator.scheduler.SystemPowerController") as power,
+                ):
+                    power.return_value.request_shutdown.side_effect = lambda reason: events.append("shutdown")
+                    self.assertEqual(main(["--project-root", str(self.tmp), "--mode", mode, "--skip-update"]), 1)
+                self.assertEqual(events, ["cn", "global", "shutdown"])
+                power.return_value.request_shutdown.assert_called_once_with(mode)
+
+    def test_combined_mode_forwards_run_now_only_to_weekly(self):
+        with (
+            contextlib.redirect_stdout(io.StringIO()),
+            patch("ok_ww_automator.scheduler.run_job_subprocess") as child,
+        ):
+            code = main(["--project-root", str(self.tmp), "--mode", "stamina-weekly", "--run-now", "--skip-update"])
+        self.assertEqual(code, 0)
+        self.assertEqual([call.kwargs["run_now"] for call in child.call_args_list], [False, False, True, True])
+
     def test_deferred_shutdown_file_is_forwarded_to_stamina_child(self):
         from ok_ww_automator.scheduler import run_job_subprocess
         marker = self.tmp / "shutdown.txt"
@@ -105,10 +140,6 @@ class SchedulerTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         self._tmp_dir.cleanup()
-
-    def test_resolve_modes(self) -> None:
-        self.assertEqual(resolve_modes("daily"), ("daily",))
-        self.assertEqual(resolve_modes("stamina"), ("stamina",))
 
     def test_build_scheduler_plan_uses_all_discovered_accounts(self) -> None:
         plan = build_scheduler_plan(

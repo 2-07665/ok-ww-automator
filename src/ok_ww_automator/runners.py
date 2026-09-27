@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import os
 import subprocess
 import time
@@ -105,6 +105,8 @@ def run_mode(mode: str, context: RunnerContext) -> RunResult:
         return DailyRunner(
             store=store,
             game_client=game_client,
+            power_controller=(DeferredPowerController(context.shutdown_request_file)
+                              if context.shutdown_request_file is not None else None),
             api_client=api_client,
             retry_config=context.app_config.retry,
             notice_client=notice_client,
@@ -182,21 +184,21 @@ class DailyRunner:
                 apply_daily_skip(result, sheet_config)
                 if sheet_config.skip_daily_once:
                     self.clear_skip_once(result, "daily")
-                return self.complete_and_persist(result)
-
-            outcome = self.run_daily_with_retries(sheet_config, result)
-            apply_daily_outcome(result, outcome)
-            return self.complete_and_persist(result)
+            else:
+                outcome = self.run_daily_with_retries(sheet_config, result)
+                apply_daily_outcome(result, outcome)
         except Exception as exc:
             result.status = RUN_STATUS_FAILURE
+            result.ended_at = now()
             result.error = "".join(traceback.format_exception_only(type(exc), exc)).strip()
-            return self.complete_and_persist(result)
         finally:
             if self.api_client is not None:
-                self.api_client.close()
-            self.notify(result, sheet_config)
-            if sheet_config.shutdown_after_daily:
-                self.power_controller.request_shutdown("daily")
+                cleanup(result, "Waves API", self.api_client.close)
+        self.complete_and_persist(result)
+        self.notify(result, sheet_config)
+        if sheet_config.shutdown_after_daily:
+            self.power_controller.request_shutdown("daily")
+        return result
 
     def persist(self, result: RunResult) -> RunResult:
         result.ensure_ended_at()
@@ -242,6 +244,7 @@ class DailyRunner:
 
     def run_daily_with_retries(self, sheet_config: SheetRunConfig, result: RunResult) -> DailyGameOutcome:
         last_outcome = DailyGameOutcome(task_error="Daily task did not run")
+        first_stamina: tuple[int | None, int | None] | None = None
         for attempt in range(1, self.retry_config.max_attempts + 1):
             try:
                 outcome = self.game_client.run_daily(sheet_config)
@@ -252,6 +255,13 @@ class DailyRunner:
                 self.sleep(self.retry_config.delay_seconds)
                 continue
 
+            if first_stamina is None and outcome.stamina_start is not None:
+                first_stamina = (outcome.stamina_start, outcome.backup_stamina_start)
+            if first_stamina is not None:
+                outcome = replace(outcome, stamina_start=first_stamina[0], backup_stamina_start=first_stamina[1])
+            # Retain observations from a partially completed attempt even if a
+            # later retry raises before returning any metrics.
+            apply_daily_outcome(result, outcome)
             last_outcome = outcome
             if not outcome.task_error or attempt >= self.retry_config.max_attempts:
                 return outcome
@@ -313,26 +323,23 @@ class StaminaRunner:
                 apply_stamina_skip(result)
                 if sheet_config.skip_stamina_once:
                     self.clear_skip_once(result, "stamina")
-                return self.complete_and_persist(result)
-
-            outcome, expected_burn, exact_expected = self.run_stamina_with_retries(sheet_config, result)
-            if outcome is None:
-                return self.complete_and_persist(result)
-            apply_stamina_outcome(result, outcome, expected_burn=expected_burn, exact_expected=exact_expected)
-            return self.complete_and_persist(result)
+            else:
+                outcome, expected_burn, exact_expected = self.run_stamina_with_retries(sheet_config, result)
+                if outcome is not None:
+                    apply_stamina_outcome(result, outcome, expected_burn=expected_burn, exact_expected=exact_expected)
         except Exception as exc:
             result.status = RUN_STATUS_FAILURE
+            result.ended_at = now()
             result.error = "".join(traceback.format_exception_only(type(exc), exc)).strip()
-            return self.complete_and_persist(result)
         finally:
-            try:
-                if self.api_client is not None:
-                    self.api_client.close()
-                self.game_client.close(sheet_config)
-                self.notify(result, sheet_config)
-            finally:
-                if sheet_config.shutdown_after_stamina:
-                    self.power_controller.request_shutdown("stamina")
+            if self.api_client is not None:
+                cleanup(result, "Waves API", self.api_client.close)
+            cleanup(result, "游戏", lambda: self.game_client.close(sheet_config))
+        self.complete_and_persist(result)
+        self.notify(result, sheet_config)
+        if sheet_config.shutdown_after_stamina:
+            self.power_controller.request_shutdown("stamina")
+        return result
 
     def persist(self, result: RunResult) -> RunResult:
         result.ensure_ended_at()
@@ -379,40 +386,53 @@ class StaminaRunner:
     ) -> tuple[StaminaGameOutcome | None, int, bool]:
         expected_burn = 0
         exact_expected = True
+        has_initial_stamina = False
+        previous_error: str | None = None
         last_outcome = StaminaGameOutcome(task_error="Stamina task did not run")
         for attempt in range(1, self.retry_config.max_attempts + 1):
             try:
                 stamina, backup_stamina = self.read_stamina(sheet_config)
-                result.fill_stamina_start(stamina, backup_stamina)
+                if not has_initial_stamina and stamina is not None:
+                    result.fill_stamina_start(stamina, backup_stamina)
+                    has_initial_stamina = True
+                result.fill_stamina_left(stamina, backup_stamina)
+                result.fill_stamina_used()
                 decision = calculate_burn(
                     stamina,
                     backup_stamina,
                     stamina_consume_unit=stamina_burn_unit(sheet_config),
                     daily_hour=self.daily_hour,
                     daily_minute=self.daily_minute,
-                    start_time=result.started_at,
+                    start_time=now(),
                 )
                 append_decision(result, decision.reason)
 
                 if not decision.should_run:
                     apply_stamina_no_run(result, decision.is_expected)
+                    if previous_error is not None:
+                        result.status = RUN_STATUS_NEEDS_REVIEW
+                        result.error = previous_error
                     return None, decision.burn_amount, decision.is_expected
 
-                expected_burn = decision.burn_amount
-                exact_expected = decision.is_expected
+                expected_burn = (result.stamina_used or 0) + decision.burn_amount
+                exact_expected = exact_expected and decision.is_expected
                 outcome = self.game_client.run_stamina(sheet_config)
             except Exception as exc:
-                self.game_client.close(sheet_config)
+                previous_error = str(exc)
+                cleanup(result, "游戏", lambda: self.game_client.close(sheet_config))
                 if attempt >= self.retry_config.max_attempts:
                     raise
                 append_retry_decision(result, attempt, exc)
                 self.sleep(self.retry_config.delay_seconds)
                 continue
 
+            result.fill_stamina_left(outcome.stamina_left, outcome.backup_stamina_left)
+            result.fill_stamina_used()
             last_outcome = outcome
             if not outcome.task_error or attempt >= self.retry_config.max_attempts:
                 return outcome, expected_burn, exact_expected
-            self.game_client.close(sheet_config)
+            previous_error = outcome.task_error
+            cleanup(result, "游戏", lambda: self.game_client.close(sheet_config))
             append_retry_decision(result, attempt, outcome.task_error)
             self.sleep(self.retry_config.delay_seconds)
         return last_outcome, expected_burn, exact_expected
@@ -437,7 +457,7 @@ def should_skip_stamina(sheet_config: SheetRunConfig) -> bool:
 def apply_daily_skip(result: RunResult, sheet_config: SheetRunConfig) -> None:
     result.ended_at = result.started_at
     result.status = RUN_STATUS_SKIPPED
-    result.decision = "日常任务设置为不执行"
+    append_decision(result, "日常任务设置为不执行")
     result.run_nightmare = False
     result.fill_stamina_left_from_start()
     if result.stamina_start is not None:
@@ -447,23 +467,21 @@ def apply_daily_skip(result: RunResult, sheet_config: SheetRunConfig) -> None:
 def apply_stamina_skip(result: RunResult) -> None:
     result.ended_at = result.started_at
     result.status = RUN_STATUS_SKIPPED
-    result.decision = "体力任务设置为不执行"
+    append_decision(result, "体力任务设置为不执行")
     result.fill_stamina_left_from_start()
     if result.stamina_start is not None:
         result.stamina_used = 0
 
 
 def apply_stamina_no_run(result: RunResult, is_expected: bool) -> None:
-    result.ended_at = result.started_at
-    result.fill_stamina_left_from_start()
-    if result.stamina_start is not None:
-        result.stamina_used = 0
+    result.ended_at = now()
+    result.fill_stamina_used()
     result.status = RUN_STATUS_SKIPPED if is_expected else RUN_STATUS_NEEDS_REVIEW
 
 
 def apply_daily_outcome(result: RunResult, outcome: DailyGameOutcome) -> None:
     fill_if_available(result.fill_stamina_start, outcome.stamina_start, outcome.backup_stamina_start)
-    fill_if_available(result.fill_stamina_left, outcome.stamina_left, outcome.backup_stamina_left)
+    result.fill_stamina_left(outcome.stamina_left, outcome.backup_stamina_left)
     result.fill_stamina_used()
     result.daily_points = outcome.daily_points
     result.error = outcome.task_error
@@ -496,6 +514,14 @@ def append_decision(result: RunResult, decision: str) -> None:
         result.decision = f"{result.decision}; {decision}"
     else:
         result.decision = decision
+
+
+def cleanup(result: RunResult, name: str, close: Callable[[], None]) -> None:
+    """Report cleanup errors without losing the task result or other cleanup."""
+    try:
+        close()
+    except Exception as exc:
+        append_decision(result, f"{name} 清理失败: {exc}")
 
 
 def append_retry_decision(result: RunResult, attempt: int, reason: object) -> None:

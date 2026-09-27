@@ -5,7 +5,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from ok_ww_automator.env_discovery import account_id_from_env_path, discover_account_envs, select_accounts
+from ok_ww_automator.env_discovery import discover_account_envs, select_accounts
 
 
 class EnvDiscoveryTest(unittest.TestCase):
@@ -16,10 +16,6 @@ class EnvDiscoveryTest(unittest.TestCase):
     def tearDown(self) -> None:
         self._tmp_dir.cleanup()
 
-    def test_account_id_from_env_path(self) -> None:
-        self.assertEqual(account_id_from_env_path(Path(".env")), "default")
-        self.assertEqual(account_id_from_env_path(Path("cn.env")), "cn")
-
     def test_discover_account_envs_ignores_example_only(self) -> None:
         env_dir = self.tmp / "env"
         env_dir.mkdir()
@@ -27,6 +23,7 @@ class EnvDiscoveryTest(unittest.TestCase):
         (env_dir / ".env").touch()
         (env_dir / "cn.env").touch()
         (env_dir / "global.env").touch()
+        (env_dir / "directory.env").mkdir()
 
         accounts = discover_account_envs(env_dir)
 
@@ -39,9 +36,15 @@ class EnvDiscoveryTest(unittest.TestCase):
         (env_dir / "global.env").touch()
         accounts = discover_account_envs(env_dir)
 
-        selected = select_accounts(accounts, ["global", "cn"])
+        selected = select_accounts(accounts, ["global", "cn", "global"])
 
         self.assertEqual([account.account_id for account in selected], ["global", "cn"])
+
+    def test_default_account_collision_is_rejected(self) -> None:
+        (self.tmp / ".env").touch()
+        (self.tmp / "default.env").touch()
+        with self.assertRaisesRegex(ValueError, "Duplicate account id 'default'"):
+            discover_account_envs(self.tmp)
 
     def test_select_accounts_rejects_unknown_account(self) -> None:
         with self.assertRaisesRegex(ValueError, "Unknown account env"):

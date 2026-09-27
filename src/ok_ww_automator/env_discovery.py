@@ -27,14 +27,23 @@ def discover_account_envs(env_dir: Path) -> list[AccountEnv]:
     if default_env.exists():
         paths.append(default_env)
     seen: set[Path] = set()
+    account_paths: dict[str, Path] = {}
     for path in sorted(paths):
+        if not path.is_file():
+            continue
         resolved = path.resolve()
         if resolved in seen:
             continue
         seen.add(resolved)
         if path.name in EXAMPLE_ENV_NAMES:
             continue
-        accounts.append(AccountEnv(account_id=account_id_from_env_path(path), path=resolved))
+        account_id = account_id_from_env_path(path)
+        if account_id in account_paths:
+            raise ValueError(
+                f"Duplicate account id {account_id!r}: {account_paths[account_id]} and {path}"
+            )
+        account_paths[account_id] = path
+        accounts.append(AccountEnv(account_id=account_id, path=resolved))
     return accounts
 
 
@@ -46,7 +55,7 @@ def select_accounts(accounts: list[AccountEnv], selected_ids: list[str] | None =
     missing = [account_id for account_id in selected_ids if account_id not in by_id]
     if missing:
         raise ValueError(f"Unknown account env: {', '.join(missing)}")
-    return [by_id[account_id] for account_id in selected_ids]
+    return [by_id[account_id] for account_id in dict.fromkeys(selected_ids)]
 
 
 def account_id_from_env_path(path: Path) -> str:

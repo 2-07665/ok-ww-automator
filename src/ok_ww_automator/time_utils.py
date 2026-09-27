@@ -5,8 +5,6 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass
 
-UTC = dt.timezone.utc
-LOCAL_TZ = dt.datetime.now().astimezone().tzinfo
 BEIJING_TZ = dt.timezone(dt.timedelta(hours=8), name="UTC+08")
 
 DEFAULT_DAILY_RUN_HOUR = 5
@@ -17,7 +15,6 @@ BACKUP_STAMINA_CAP = 480
 STAMINA_REGEN_MINUTES = 6
 BACKUP_STAMINA_REGEN_MINUTES = 12
 
-DAILY_TASK_STAMINA = 180
 TACET_FARM_STAMINA_UNIT = 60
 
 
@@ -37,10 +34,6 @@ def format_timestamp(value: dt.datetime) -> str:
     """Return a Google Sheets friendly timestamp."""
 
     return value.strftime("%Y-%m-%d %H:%M:%S")
-
-
-def format_date(value: dt.datetime) -> str:
-    return value.strftime("%Y-%m-%d")
 
 
 def format_duration(total_seconds: float | int) -> str:
@@ -97,19 +90,6 @@ def minutes_until_target_time(
     if target <= start_time_bj:
         target += dt.timedelta(days=1)
     return int((target - start_time).total_seconds() // 60)
-
-
-def stamina_after_consume(stamina: int, backup_stamina: int, consume: int) -> tuple[int, int]:
-    """Calculate stamina and backup stamina left after consuming an amount."""
-
-    consume = max(0, consume)
-    spent = min(stamina, consume)
-    stamina -= spent
-    consume -= spent
-
-    spent = min(backup_stamina, consume)
-    backup_stamina -= spent
-    return stamina, backup_stamina if backup_stamina >= 0 else -1
 
 
 def calculate_burn(
@@ -190,7 +170,8 @@ def parse_time_of_day(value: str) -> dt.time:
 def _ensure_aware(value: dt.datetime) -> dt.datetime:
     if value.tzinfo is not None:
         return value
-    return value.replace(tzinfo=LOCAL_TZ)
+    # Let the OS apply the offset for this date, including daylight saving time.
+    return value.astimezone()
 
 
 def _clamp(value: int, minimum: int, maximum: int) -> int:
