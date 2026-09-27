@@ -1,0 +1,75 @@
+name: Release Windows launcher
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-launcher-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: ok-ww-automator
+    env:
+      UV_PROJECT_ENVIRONMENT: ${{ github.workspace }}/.venv
+
+    steps:
+      - name: Check out Automator
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          path: ok-ww-automator
+          persist-credentials: false
+
+      # The build only needs the icon, not the upstream Python runtime.
+      - name: Check out the pinned upstream icon
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: ok-oldking/ok-wuthering-waves
+          ref: bd744c1b06a623c72ddf974f20c633facd106ef7
+          path: ok-wuthering-waves
+          sparse-checkout: /icons/icon.ico
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: "0.11.13"
+          python-version: "3.12"
+          working-directory: ok-ww-automator
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install locked launcher and build dependencies
+        run: uv sync --locked --no-dev --extra launcher --extra build
+
+      - name: Check launcher behavior
+        run: ../.venv/Scripts/python.exe -m unittest discover -s tests -p test_windows_launcher.py
+
+      - name: Check GUI initialization without starting tasks
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: >-
+          ../.venv/Scripts/python.exe -c
+          "from PySide6.QtWidgets import QApplication; from ok_ww_automator.launcher_ui import LauncherWindow; app = QApplication([]); window = LauncherWindow(); window.close()"
+
+      - name: Build executable
+        run: ./windows/build_launcher.ps1
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: >-
+          gh release create "$env:RELEASE_TAG" dist/OKAutomatorLauncher.exe
+          --verify-tag --title "$env:RELEASE_TAG" --generate-notes

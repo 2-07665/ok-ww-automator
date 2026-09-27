@@ -84,12 +84,12 @@ uv run --active python -m ok_ww_automator.scheduler --mode daily --dry-run
 
 ## Elevated Windows Launcher
 
-The optional one-file `OK Automator Launcher` provides the regular OK GUI action, direct game launching for one selected account, and ordered multi-account Daily/Stamina runs with embedded logs and process-tree stopping. **Launch Game** is enabled only when exactly one account is selected; it reads that profile's `GAME_EXE_PATH` and starts it directly. It does not detect, close, or manage existing or newly launched game processes, and the button has a three-second cooldown to prevent accidental repeated launches. Multi-selection remains available for scheduler runs. No prebuilt executable is released; build it locally with native Windows Python 3.12.
+The optional one-file `OK Automator Launcher` provides the regular OK GUI action, direct game launching for one selected account, and ordered multi-account Daily/Stamina runs with embedded logs and process-tree stopping. **Launch Game** is enabled only when exactly one account is selected; it reads that profile's `GAME_EXE_PATH` and starts it directly. It does not detect, close, or manage existing or newly launched game processes, and the button has a three-second cooldown to prevent accidental repeated launches. Multi-selection remains available for scheduler runs. Download `OKAutomatorLauncher.exe` directly from [Releases](https://github.com/2-07665/ok-ww-automator/releases) without building locally. Push a version tag starting with `v` when a new release is needed; CI builds the launcher and creates the release automatically. Ordinary code pushes do not trigger a build.
 
-From the `ok-ww-automator` directory, install the build dependency into the shared parent virtual environment and run the build script:
+For a local build, first prepare the shared Python 3.12 environment and sibling upstream checkout following the installation guide, then run from `ok-ww-automator`:
 
 ```powershell
-uv pip install --python ..\.venv\Scripts\python.exe -e ".[build]"
+uv pip install --python ..\.venv\Scripts\python.exe -e ".[launcher,build]"
 powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\build_launcher.ps1
 ```
 

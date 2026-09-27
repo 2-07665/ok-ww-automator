@@ -27,16 +27,36 @@
 
 只有恰好选中一个账号时，**Launch Game** 才会启用。它会校验该账号配置中的 `GAME_EXE_PATH`，然后直接启动对应可执行文件；账号多选功能仍保留给 scheduler 任务。游戏启动特意与 Automator 托管任务分离：它不会检测或关闭已经运行的游戏，启动后 launcher 也不会监控、停止或以其他方式管理游戏。按钮使用后会禁用 3 秒，以防快速重复点击造成意外多开。
 
-## 构建
+## 下载 Release
 
-请使用共享虚拟环境中的原生 Windows Python 3.12。安装构建额外依赖，然后在 Automator 项目目录中运行 PowerShell 构建脚本：
+打开仓库的 [Releases](https://github.com/2-07665/ok-ww-automator/releases)，从所需版本的 **Assets** 下载 `OKAutomatorLauncher.exe`，放到 `ok-ww-automator\dist` 中。Release 附件不使用 Actions 临时产物的保留期限。
+
+[Release Windows launcher](https://github.com/2-07665/ok-ww-automator/actions/workflows/build-launcher.yml) 仅在推送 `v` 开头的 tag 时构建，普通分支推送和 PR 不触发。它使用 Windows x64、Python 3.12 和 `uv.lock` 中锁定的 `launcher`、`build` 依赖，执行现有启动器测试及 GUI 初始化检查，然后调用本地同一份构建脚本。上游只读取固定提交中的图标，不安装或运行 ok-script、游戏任务及 OCR 依赖。构建成功后自动创建对应 tag 的 Release，生成发布说明并附上 EXE。
+
+需要发布时，先提交要发布的代码和工作流，再创建、推送一个新版本 tag。例如：
 
 ```powershell
-uv pip install --python ..\.venv\Scripts\python.exe -e ".[build]"
-.\windows\build_launcher.ps1
+git tag -a v0.1.0 -m "Release v0.1.0"
+git push origin v0.1.0
 ```
 
-脚本使用现有的 `ok-wuthering-waves\icons\icon.ico`，并生成单窗口、单文件可执行程序：
+将示例版本号替换为本次的新版本号。CI 构建的是 tag 指向的提交，下载后配合该版本源码使用。请由工作流创建 Release，无需提前在网页上创建同名 Release；构建失败可在 Actions 中重试，已经发布的版本有改动时使用新 tag。
+
+下载 EXE 可以省去本机构建及 PowerShell 执行策略设置，但仍需按安装指南准备共享 Python 环境、两个仓库和任务配置。此产物是启动器，不包含完整自动化运行环境；CI 的 GUI 检查也不代表真实游戏任务已通过验证。
+
+## 本地构建
+
+如果需要自行构建，请先将两个项目放在上面的同级目录中，并安装 `uv`。从 Automator 项目目录执行以下命令；创建环境的第一条命令仅用于共享 `.venv` 尚不存在的首次安装：
+
+```powershell
+uv venv --python 3.12 ..\.venv
+uv pip install --python ..\.venv\Scripts\python.exe -e ".[launcher,build]"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\windows\build_launcher.ps1
+```
+
+最后一条命令只对本次 PowerShell 进程设置执行策略。构建脚本本身不会创建虚拟环境或安装依赖；只有 clone 项目还不能直接构建。请先关闭正在运行的启动器，以便覆盖旧 EXE。
+
+脚本使用现有的 `ok-wuthering-waves\icons\icon.ico`，临时收窄构建进程的 `PATH` 以避免打包其他工具的不兼容 DLL，中间文件位于 `build\launcher`，生成单窗口、单文件可执行程序：
 
 ```text
 dist\OKAutomatorLauncher.exe
