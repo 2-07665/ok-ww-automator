@@ -11,3 +11,7 @@
 - Use the shared parent virtual environment at `../.venv`; do not create `ok-ww-automator/.venv`.
 - Prefer `uv run --active ...` when using uv. Plain `uv run` inside this project can create a local environment and rewrite `uv.lock`.
 - WSL may show widespread sibling-checkout changes caused only by CRLF/LF normalization.
+
+## Bug Investigation Reference
+
+[debug-automator](.agents/skills/debug-automator/SKILL.md) provides a repository map, log discovery and filtering tips, and a read-only script for retrieving recent Sheets reports with existing account credentials.

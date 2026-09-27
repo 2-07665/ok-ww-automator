@@ -43,7 +43,7 @@ Reviewed on 2026-09-27 against remote default-branch HEADs:
 4. Install the updated upstream requirements into `..\.venv\Scripts\python.exe`, rerun both doctor modes, and run the tests below. The scheduler updater performs fast-forward-only Git updates and explicitly targets its current interpreter; local conflicts stop the update.
 5. Check the affected live behavior when appropriate: launch/capture/cancellation, localized errors, stamina OCR, weekly success, or custom tasks. Report omitted checks. Chinese OCR regions, game balance/timing, Kuro response schemas, credentials, and network services cannot be validated by a source scan.
 
-The project Codex skill is [align-upstream](../.agents/skills/align-upstream/SKILL.md). Invoke `$align-upstream` when reviewing an upstream upgrade.
+For incident investigation, [debug-automator](../.agents/skills/debug-automator/SKILL.md) includes log navigation, repository context and a read-only recent Sheets results script. Use [align-upstream](../.agents/skills/align-upstream/SKILL.md) when reviewing an upstream upgrade.
 
 ## Tests
 
