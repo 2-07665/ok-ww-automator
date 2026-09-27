@@ -18,6 +18,7 @@ from .game_clients import (
     StaminaGameOutcome,
     SubprocessDailyGameClient,
     SubprocessStaminaGameClient,
+    SubprocessWeeklyGameClient,
     stamina_burn_unit,
 )
 from .healthchecks import HealthcheckMonitor, NullHealthcheckMonitor, healthcheck_monitor_from_config
@@ -42,6 +43,9 @@ class RunnerError(RuntimeError):
 class RunnerContext:
     app_config: AppConfig
     ww_root: Path
+    run_now: bool = False
+    prepare: Callable[[float], None] | None = None
+    shutdown_request_file: Path | None = None
 
 
 class DailyApiClient(Protocol):
@@ -62,6 +66,16 @@ class SystemPowerController:
         subprocess.run(command, check=False)
 
 
+class DeferredPowerController:
+    """Record the existing runner's shutdown request for the outer scheduler."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+    def request_shutdown(self, reason: str) -> None:
+        self.path.write_text(reason, encoding="utf-8")
+
+
 class SheetsRunStore(Protocol):
     def fetch_run_config_or_default(self) -> tuple[SheetRunConfig, str | None]: ...
 
@@ -73,6 +87,15 @@ class SheetsRunStore(Protocol):
 
 
 def run_mode(mode: str, context: RunnerContext) -> RunResult:
+    if mode == "weekly":
+        from .weekly import WeeklyRunner
+
+        return WeeklyRunner(
+            context.app_config,
+            SubprocessWeeklyGameClient(context.app_config, ww_root=context.ww_root),
+            run_now=context.run_now,
+            prepare=context.prepare,
+        ).run()
     if mode == "daily":
         store = GoogleSheetsStore.from_config(context.app_config.google_sheets)
         game_client = SubprocessDailyGameClient(context.app_config, ww_root=context.ww_root)
@@ -97,6 +120,8 @@ def run_mode(mode: str, context: RunnerContext) -> RunResult:
         return StaminaRunner(
             store=store,
             game_client=game_client,
+            power_controller=(DeferredPowerController(context.shutdown_request_file)
+                              if context.shutdown_request_file is not None else None),
             api_client=api_client,
             retry_config=context.app_config.retry,
             notice_client=notice_client,
@@ -300,12 +325,14 @@ class StaminaRunner:
             result.error = "".join(traceback.format_exception_only(type(exc), exc)).strip()
             return self.complete_and_persist(result)
         finally:
-            if self.api_client is not None:
-                self.api_client.close()
-            self.game_client.close(sheet_config)
-            self.notify(result, sheet_config)
-            if sheet_config.shutdown_after_stamina:
-                self.power_controller.request_shutdown("stamina")
+            try:
+                if self.api_client is not None:
+                    self.api_client.close()
+                self.game_client.close(sheet_config)
+                self.notify(result, sheet_config)
+            finally:
+                if sheet_config.shutdown_after_stamina:
+                    self.power_controller.request_shutdown("stamina")
 
     def persist(self, result: RunResult) -> RunResult:
         result.ensure_ended_at()

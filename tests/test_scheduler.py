@@ -5,15 +5,96 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from ok_ww_automator.env_discovery import AccountEnv
+from ok_ww_automator.models import RunResult, SheetRunConfig
+from ok_ww_automator.time_utils import now
 from ok_ww_automator.scheduler import SchedulerJob, build_scheduler_plan, main, resolve_modes, run_job, run_jobs
 
 
 class SchedulerTest(unittest.TestCase):
+    def test_combined_mode_finishes_all_stamina_healthchecks_before_weekly_and_shutdown(self):
+        events = []
+        store = Mock()
+        store.fetch_run_config_or_default.return_value = (SheetRunConfig(run_stamina=False, shutdown_after_stamina=True), None)
+        monitor = Mock()
+        monitor.start.side_effect = lambda result: events.append("health-start")
+        monitor.complete.side_effect = lambda result: events.append("health-complete")
+        power = Mock()
+        power.request_shutdown.side_effect = lambda reason: events.append("shutdown")
+
+        def child(job, **kwargs):
+            events.append(job.mode)
+            self.assertEqual(kwargs.get("shutdown_request_file") is not None, job.mode == "stamina")
+            run_job(job, project_root=self.tmp, ww_root=self.tmp / "ww",
+                    shutdown_request_file=kwargs.get("shutdown_request_file"))
+
+        def weekly():
+            # Even failure must not send a second stamina heartbeat or bypass shutdown.
+            return RunResult("weekly", now(), now(), "failure", error="timeout")
+
+        with (
+            contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()),
+            patch("ok_ww_automator.scheduler.run_job_subprocess", side_effect=child),
+            patch("ok_ww_automator.runners.GoogleSheetsStore.from_config", return_value=store),
+            patch("ok_ww_automator.runners.SubprocessStaminaGameClient"),
+            patch("ok_ww_automator.runners.healthcheck_monitor_from_config", return_value=monitor),
+            patch("ok_ww_automator.weekly.WeeklyRunner.run", side_effect=weekly),
+            patch("ok_ww_automator.scheduler.SystemPowerController", return_value=power),
+        ):
+            code = main(["--project-root", str(self.tmp), "--mode", "stamina-weekly", "--skip-update"])
+        self.assertEqual(code, 1)
+        self.assertEqual(events, ["stamina", "health-start", "health-complete",
+                                  "stamina", "health-start", "health-complete", "weekly", "weekly", "shutdown"])
+        power.request_shutdown.assert_called_once_with("stamina-weekly")
+
+    def test_combined_mode_without_shutdown_request_never_shuts_down(self):
+        calls = []
+        with (
+            contextlib.redirect_stdout(io.StringIO()),
+            patch("ok_ww_automator.scheduler.run_job_subprocess", side_effect=lambda job, **kwargs: calls.append(job.mode)),
+            patch("ok_ww_automator.scheduler.SystemPowerController") as power,
+        ):
+            code = main(["--project-root", str(self.tmp), "--mode", "stamina-weekly", "--skip-update"])
+        self.assertEqual(code, 0)
+        self.assertEqual(calls, ["stamina", "stamina", "weekly", "weekly"])
+        power.assert_not_called()
+
+    def test_deferred_shutdown_file_is_forwarded_to_stamina_child(self):
+        from ok_ww_automator.scheduler import run_job_subprocess
+        marker = self.tmp / "shutdown.txt"
+        job = SchedulerJob(AccountEnv("cn", self.env_dir / "cn.env"), "stamina")
+        with patch("ok_ww_automator.scheduler.subprocess.run") as run:
+            run_job_subprocess(job, project_root=self.tmp, env_dir=self.env_dir, ww_root=self.tmp / "ww",
+                               ww_remote="origin", ww_branch="master", shutdown_request_file=marker)
+        command = run.call_args.args[0]
+        self.assertEqual(command[command.index("--shutdown-request-file") + 1], str(marker))
+        self.assertIn("--skip-update", command)
+
+    def test_weekly_success_skips_update_and_game_on_later_trigger(self):
+        from ok_ww_automator.game_clients import WeeklyGameOutcome
+        with contextlib.redirect_stdout(io.StringIO()), patch("ok_ww_automator.scheduler.run_commands") as update, patch("ok_ww_automator.game_clients.SubprocessWeeklyGameClient.run_weekly", return_value=WeeklyGameOutcome(completed=True)) as game:
+            args = ["--project-root", str(self.tmp), "--mode", "weekly", "--account", "cn"]
+            self.assertEqual(main(args + ["--skip-update"]), 0)
+            game.reset_mock()
+            self.assertEqual(main(args), 0)
+        update.assert_not_called()
+        game.assert_not_called()
+
+    def test_weekly_multi_account_forwards_manual_and_update_policy(self):
+        with contextlib.redirect_stdout(io.StringIO()), patch("ok_ww_automator.scheduler.run_commands") as update, patch("ok_ww_automator.scheduler.subprocess.run") as child:
+            code = main(["--project-root", str(self.tmp), "--mode", "weekly", "--run-now"])
+        self.assertEqual(code, 0)
+        update.assert_not_called()
+        self.assertEqual(child.call_count, 2)
+        for call in child.call_args_list:
+            command = call.args[0]
+            self.assertIn("--run-now", command)
+            self.assertNotIn("--skip-update", command)
+
     def setUp(self) -> None:
         self._tmp_dir = tempfile.TemporaryDirectory()
         self.tmp = Path(self._tmp_dir.name).resolve()

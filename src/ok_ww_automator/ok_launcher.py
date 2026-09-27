@@ -384,4 +384,7 @@ def kill_game_processes() -> None:
         import os
         if os.name == "nt":
             for name in ("Wuthering Waves.exe", "Client-Win64-Shipping.exe"):
-                subprocess.run(["taskkill", "/F", "/IM", name], capture_output=True, check=False)
+                try:
+                    subprocess.run(["taskkill", "/F", "/IM", name], capture_output=True, check=False, timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass

@@ -11,5 +11,6 @@ wheels/
 .venv
 
 # Local runtime config
+.state/
 env/*.env
 !env/.env.example

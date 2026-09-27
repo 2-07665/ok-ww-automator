@@ -126,7 +126,7 @@ def build_auto_farm_command(paths: LauncherPaths, stop_time: str) -> list[str]:
 
 
 def build_scheduler_command(paths: LauncherPaths, mode: str, account_ids: Sequence[str]) -> list[str]:
-    if mode not in {"daily", "stamina"}:
+    if mode not in {"daily", "stamina", "weekly", "stamina-weekly"}:
         raise ValueError(f"Unsupported scheduler mode: {mode}")
     if not account_ids:
         raise ValueError("Select at least one account.")
@@ -142,6 +142,8 @@ def build_scheduler_command(paths: LauncherPaths, mode: str, account_ids: Sequen
         "--mode",
         mode,
     ]
+    if mode == "weekly":
+        command.append("--run-now")
     for account_id in account_ids:
         command.extend(("--account", account_id))
     return command

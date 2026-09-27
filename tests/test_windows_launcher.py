@@ -150,6 +150,17 @@ class LauncherDiscoveryTest(unittest.TestCase):
 
 
 class LauncherCommandTest(unittest.TestCase):
+    def test_combined_mode_keeps_weekly_success_deduplication(self):
+        command = build_scheduler_command(self.paths, "stamina-weekly", ["CN"])
+        self.assertEqual(command[command.index("--mode") + 1], "stamina-weekly")
+        self.assertNotIn("--run-now", command)
+
+    def test_weekly_button_requests_immediate_run(self):
+        command = build_scheduler_command(self.paths, "weekly", ["CN", "US"])
+        self.assertEqual(command[command.index("--mode") + 1], "weekly")
+        self.assertEqual(command.count("--run-now"), 1)
+        self.assertEqual(command[-4:], ["--account", "CN", "--account", "US"])
+
     def setUp(self) -> None:
         workspace = Path("C:/workspace")
         self.paths = LauncherPaths(

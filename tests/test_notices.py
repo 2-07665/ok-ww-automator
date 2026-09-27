@@ -39,6 +39,16 @@ class FakeSession:
 
 
 class NoticesTest(unittest.TestCase):
+    def test_weekly_failure_message_uses_weekly_details_and_escapes_error(self):
+        stamp = dt.datetime(2026, 10, 2, 5, tzinfo=BEIJING_TZ)
+        result = RunResult("weekly", stamp, stamp, "failure", decision="2026-09-28 周未完成", error="<garden error>")
+        message = build_notice_message(result, SheetRunConfig(), account_id="CN")
+        self.assertIn("[CN]", message.subject)
+        self.assertIn("周常乐园", message.subject)
+        self.assertIn("2026-09-28", message.text)
+        self.assertIn("&lt;garden error&gt;", message.html)
+        self.assertNotIn("刷取", message.text)
+
     def test_should_notify_all_final_statuses_by_default(self) -> None:
         base = dt.datetime(2026, 5, 16, 5, 0, tzinfo=BEIJING_TZ)
 

@@ -2,21 +2,25 @@ from pathlib import Path
 import json
 import subprocess
 import sys
+from types import ModuleType
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from ok_ww_automator.config import AppConfig
 from ok_ww_automator.models import SheetRunConfig
+from ok_ww_automator.processes import run_with_timeout
 from ok_ww_automator.game_clients import (
     AUTO_FARM_NIGHTMARE_NEST,
     DAILY_ADDITIONAL_TASKS,
     NIGHTMARE_FARM_SELECTION,
     NIGHTMARE_PURIFICATION,
     OkStaminaGameClient,
+    OkWeeklyGameClient,
     SubprocessDailyGameClient,
     SubprocessStaminaGameClient,
+    SubprocessWeeklyGameClient,
     WINDOWS_ACCESS_VIOLATION_EXIT_CODE,
     apply_daily_task_config,
     normalize_daily_task_error,
@@ -113,6 +117,48 @@ class FakeLauncher:
 
 
 class GameClientsTest(unittest.TestCase):
+    def test_weekly_completion_info_overrides_errors_only_with_exact_marker(self):
+        garden_module = ModuleType("src.task.GardenTask")
+        garden_module.GardenTask = type("GardenTask", (), {})
+        cases = [
+            ("乐园任务完成, 已达到上限", "optional reward failed", True),
+            ("乐园任务完成, 已达到上限", TimeoutError("executor timeout"), True),
+            ("乐园任务完成, 已达到上限", "", True),
+            ("garden running", "", True),
+            ("garden running", "garden failed", False),
+            ("尚未完成", "garden failed", False),
+            (None, "garden failed", False),
+            (None, TimeoutError("executor timeout"), None),
+        ]
+        for log, error, expected in cases:
+            with self.subTest(log=log, error=error):
+                task = Mock()
+                task.info_get.side_effect = {"Log": log}.get
+                runtime = Mock()
+                runtime.task_executor.get_task_by_class.return_value = task
+                launcher = Mock()
+                launcher.start_ok_and_game.return_value = runtime
+                with (
+                    patch.dict(sys.modules, {"src.task.GardenTask": garden_module}),
+                    patch("ok_ww_automator.game_clients.ww_runtime_context"),
+                    patch("ok_ww_automator.game_clients.run_onetime_task") as run,
+                    patch("ok_ww_automator.game_clients.close_ok_runtime") as close,
+                    patch("ok_ww_automator.game_clients.kill_game_processes") as kill,
+                ):
+                    if isinstance(error, Exception):
+                        run.side_effect = error
+                    else:
+                        run.return_value = error
+                    if expected is None:
+                        with self.assertRaises(TimeoutError):
+                            OkWeeklyGameClient(launcher).run_weekly()
+                    else:
+                        outcome = OkWeeklyGameClient(launcher).run_weekly()
+                        self.assertEqual(outcome.completed, expected)
+                        self.assertEqual(outcome.task_error, str(error) if error else None)
+                    close.assert_called_once_with(runtime)
+                    kill.assert_called_once()
+
     def test_battle_pass_ended_is_not_a_daily_task_error(self) -> None:
         self.assertIsNone(
             normalize_daily_task_error("Daily Task: can not battle pass, maybe ended")
@@ -288,6 +334,40 @@ class OkStaminaGameClientTest(unittest.TestCase):
 
 
 class SubprocessGameClientTest(unittest.TestCase):
+    def test_weekly_timeout_cleans_up_game_and_propagates(self):
+        client = SubprocessWeeklyGameClient(AppConfig(Path("/project"), Path("/project/env/cn.env")), ww_root=Path("/ww"))
+        with (
+            patch("ok_ww_automator.game_clients.run_with_timeout", side_effect=subprocess.TimeoutExpired("game", 10)),
+            patch("ok_ww_automator.game_clients.kill_game_processes") as cleanup,
+        ):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                client.run_weekly(timeout=10)
+        cleanup.assert_called_once()
+
+    def test_timeout_terminates_process_tree_before_waiting_for_exit(self):
+        process = Mock(pid=123)
+        process.wait.side_effect = [subprocess.TimeoutExpired("game", 10), 1]
+        process.poll.return_value = 1
+        with patch("ok_ww_automator.processes.os.name", "nt"), patch("ok_ww_automator.processes.subprocess.Popen", return_value=process), patch("ok_ww_automator.processes.subprocess.run") as kill:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                run_with_timeout(["game"], timeout=10)
+        self.assertEqual(kill.call_args.args[0], ["taskkill", "/PID", "123", "/T", "/F"])
+        self.assertEqual(kill.call_args.kwargs["timeout"], 15)
+        process.wait.assert_called_with(timeout=5)
+
+    def test_weekly_child_requires_explicit_completion(self):
+        config = AppConfig(Path("/project"), Path("/project/env/cn.env"))
+        client = SubprocessWeeklyGameClient(config, ww_root=Path("/ww"))
+        for payload, expected in [({}, False), ({"completed": True, "task_error": None}, True)]:
+            def fake_run(command, env, timeout):
+                self.assertEqual(timeout, 40 * 60)
+                self.assertEqual(command[command.index("--mode") + 1], "weekly")
+                self.assertEqual(env["ENV_FILE"], str(config.env_path))
+                Path(command[command.index("--output") + 1]).write_text(json.dumps(payload), encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0)
+            with self.subTest(payload=payload), patch("ok_ww_automator.game_clients.run_with_timeout", side_effect=fake_run):
+                self.assertEqual(client.run_weekly().completed, expected)
+
     def test_daily_attempt_runs_in_child_process_and_returns_outcome(self) -> None:
         app_config = AppConfig(
             project_root=Path("/project"),

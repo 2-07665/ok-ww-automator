@@ -8,6 +8,7 @@ The automation workflow provides remote configuration via Google Sheets, multi-a
 
 ## Features
 
+- **Weekly Garden**: Run Garden through Windows Task Scheduler, skip scheduled runs after weekly success, and notify via wxPusher if still unsuccessful on/after the env-configured notice day. Also available from the launcher. See [weekly scheduling](docs/scheduler.md#weekly-garden).
 - **Decoupled Orchestration**: Separates scheduling, retry logic, and stamina calculation from the low-level game interaction.
 - **Injectable Custom Tasks**: Provides a separate set of extra OK tasks, independent from the automation workflow, that can be injected into the regular OK GUI.
 - **Remote Configuration**: Reads task settings from a Google Sheet, allowing you to update your daily routines without touching the host machine.

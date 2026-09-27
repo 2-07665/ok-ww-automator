@@ -11,7 +11,7 @@ import sys
 import traceback
 
 from .config import load_config
-from .game_clients import OkDailyGameClient, OkStaminaGameClient
+from .game_clients import OkDailyGameClient, OkStaminaGameClient, OkWeeklyGameClient
 from .models import SheetRunConfig
 from .ok_launcher import OkLauncher
 
@@ -42,7 +42,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--project-root", required=True)
     parser.add_argument("--env-file", required=True)
     parser.add_argument("--ww-root", required=True)
-    parser.add_argument("--mode", choices=["daily", "stamina"], required=True)
+    parser.add_argument("--mode", choices=["daily", "stamina", "weekly"], required=True)
     parser.add_argument("--operation", choices=["run", "read"], required=True)
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
@@ -55,6 +55,8 @@ def read_sheet_config(input_path: Path) -> SheetRunConfig:
 
 
 def run_operation(mode: str, operation: str, launcher: OkLauncher, sheet_config: SheetRunConfig) -> dict:
+    if mode == "weekly" and operation == "run":
+        return asdict(OkWeeklyGameClient(launcher).run_weekly())
     if mode == "daily" and operation == "run":
         return asdict(OkDailyGameClient(launcher).run_daily(sheet_config))
     if mode == "stamina" and operation == "read":

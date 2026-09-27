@@ -15,6 +15,7 @@ from typing import Protocol
 from .config import AppConfig
 from .models import SheetRunConfig
 from .ok_launcher import OkLauncher, kill_game_processes, run_onetime_task, ww_runtime_context
+from .processes import run_with_timeout
 
 WINDOWS_ACCESS_VIOLATION_EXIT_CODE = 0xC0000005
 WINDOWS_ACCESS_VIOLATION_SIGNED_EXIT_CODE = -1073741819
@@ -32,6 +33,7 @@ BENIGN_DAILY_TASK_ERRORS = frozenset(
         "can not battle pass, maybe ended",
     }
 )
+GARDEN_COMPLETED_LOG = "乐园任务完成, 已达到上限"
 
 
 def normalize_daily_task_error(task_error: str | None) -> str | None:
@@ -64,6 +66,58 @@ class StaminaGameOutcome:
 
 class DailyGameClient(Protocol):
     def run_daily(self, sheet_config: SheetRunConfig) -> DailyGameOutcome: ...
+
+
+@dataclass(frozen=True)
+class WeeklyGameOutcome:
+    completed: bool = False
+    task_error: str | None = None
+
+
+class WeeklyGameClient(Protocol):
+    def run_weekly(self, *, timeout: float) -> WeeklyGameOutcome: ...
+
+
+class OkWeeklyGameClient:
+    def __init__(self, launcher: OkLauncher) -> None:
+        self.launcher = launcher
+
+    def run_weekly(self) -> WeeklyGameOutcome:
+        ok = None
+        try:
+            with ww_runtime_context(self.launcher.options.ww_root):
+                ok = self.launcher.start_ok_and_game()
+                from src.task.GardenTask import GardenTask
+
+                task = ok.task_executor.get_task_by_class(GardenTask)
+                if task is None:
+                    raise RuntimeError("GardenTask is not registered")
+                try:
+                    task_error = run_onetime_task(ok.task_executor, task, timeout_seconds=1800)
+                except Exception as exc:
+                    if task.info_get("Log") != GARDEN_COMPLETED_LOG:
+                        raise
+                    task_error = str(exc)
+                # This task instance belongs to this attempt's fresh process. Its
+                # completion log takes precedence over non-fatal upstream errors.
+                completed = task.info_get("Log") == GARDEN_COMPLETED_LOG or not task_error
+                return WeeklyGameOutcome(completed=completed, task_error=task_error or None)
+        finally:
+            if ok is not None:
+                close_ok_runtime(ok)
+            kill_game_processes()
+
+
+class SubprocessWeeklyGameClient:
+    def __init__(self, app_config: AppConfig, *, ww_root: Path) -> None:
+        self.app_config = app_config
+        self.ww_root = ww_root
+
+    def run_weekly(self, *, timeout: float = 40 * 60) -> WeeklyGameOutcome:
+        payload = run_game_attempt_subprocess(
+            self.app_config, self.ww_root, "weekly", "run", SheetRunConfig(), timeout=timeout
+        )
+        return WeeklyGameOutcome(**payload)
 
 
 class StaminaGameClient(Protocol):
@@ -211,6 +265,8 @@ def run_game_attempt_subprocess(
     mode: str,
     operation: str,
     sheet_config: SheetRunConfig,
+    *,
+    timeout: float | None = None,
 ) -> dict:
     with tempfile.TemporaryDirectory(prefix="ok-ww-attempt-") as temp_dir:
         temp_path = Path(temp_dir)
@@ -243,7 +299,16 @@ def run_game_attempt_subprocess(
         env = dict(os.environ)
         env["ENV_FILE"] = str(app_config.env_path)
 
-        completed = subprocess.run(command, env=env, check=False)
+        if timeout is None:
+            completed = subprocess.run(command, env=env, check=False)
+        else:
+            try:
+                completed = run_with_timeout(command, env=env, timeout=timeout)
+            except BaseException:
+                # A game started through a platform launcher may not remain a
+                # descendant of the Python process; use the existing game cleanup too.
+                kill_game_processes()
+                raise
         payload = read_attempt_payload(output_path)
         if completed.returncode != 0:
             if is_native_teardown_crash(completed.returncode) and is_attempt_result_payload(payload, mode, operation):
@@ -271,6 +336,8 @@ def is_native_teardown_crash(returncode: int) -> bool:
 def is_attempt_result_payload(payload: object, mode: str, operation: str) -> bool:
     if not isinstance(payload, dict) or "error" in payload:
         return False
+    if mode == "weekly" and operation == "run":
+        return isinstance(payload.get("completed"), bool)
     if mode == "daily" and operation == "run":
         return any(key in payload for key in DailyGameOutcome.__dataclass_fields__)
     if mode == "stamina" and operation == "read":

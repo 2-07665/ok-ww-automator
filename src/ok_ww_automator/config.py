@@ -31,6 +31,11 @@ class DailyRunTimeConfig:
 
 
 @dataclass(frozen=True)
+class WeeklyRunConfig:
+    notice_day: int = 7  # ISO weekdays: Monday=1, Sunday=7
+
+
+@dataclass(frozen=True)
 class GoogleSheetsConfig:
     spreadsheet_id: str | None = None
     service_account_json_base64: str | None = None
@@ -142,6 +147,7 @@ class AppConfig:
     retry: RetryConfig = field(default_factory=RetryConfig)
     notice: NoticeConfig = field(default_factory=NoticeConfig)
     healthchecks: HealthchecksConfig = field(default_factory=HealthchecksConfig)
+    weekly_run: WeeklyRunConfig = field(default_factory=WeeklyRunConfig)
 
     def require_game_exe_path(self) -> Path:
         if self.game_exe_path is None:
@@ -174,6 +180,9 @@ def load_config(
         daily_run_time=DailyRunTimeConfig(
             hour=_int_value(values, "DAILY_HOUR", 5, minimum=0, maximum=23),
             minute=_int_value(values, "DAILY_MINUTE", 0, minimum=0, maximum=59),
+        ),
+        weekly_run=WeeklyRunConfig(
+            notice_day=_int_value(values, "WEEKLY_NOTICE_DAY", 7, minimum=1, maximum=7),
         ),
         google_sheets=GoogleSheetsConfig(
             spreadsheet_id=_blank_to_none(values.get("GOOGLE_SHEET_ID")),

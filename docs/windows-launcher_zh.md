@@ -1,6 +1,10 @@
 # OK Automator Launcher（Windows）
 
-`OK Automator Launcher` 是现有 Automator 公共入口的轻量级提权桌面前端。它从 `env/*.env` 中发现账号配置，可启动常规 OK GUI 或单个所选账号的游戏，并按界面中的显示顺序为选定账号运行 Daily 或 Stamina 调度。它不会安装、修复、激活或更新 Python 环境。
+`OK Automator Launcher` 是现有 Automator 公共入口的轻量级提权桌面前端。它从 `env/*.env` 中发现账号配置，可启动常规 OK GUI 或单个所选账号的游戏，并按界面中的显示顺序为选定账号运行 Daily、Stamina 或 Weekly 调度。它不会安装、修复、激活或更新 Python 环境。
+
+第一页面的 **周常乐园** 可一键启动游戏并运行 Garden：本周已成功也会执行；成功后更新本周记录，重跑失败则保留此前成功记录。周次按北京时间周一 04:00 划分。定时运行与失败通知设置见 [周常乐园调度](scheduler_zh.md#周常乐园)。添加此入口需要重新构建启动器 EXE。
+
+第一页面也提供 **体力 + 周常**：先完成所有账号的体力与 Healthchecks，再执行尚未完成的周常，最后统一处理原体力配置的关机请求。单独周常和组合模式的跳过规则不同，详见 [组合调度](scheduler_zh.md#体力--周常--关机)。
 
 ## 工作区结构与可执行文件位置
 

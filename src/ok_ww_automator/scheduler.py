@@ -6,16 +6,17 @@ import argparse
 import os
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Callable, Literal
 
 from .config import AppConfig, load_config
 from .env_discovery import AccountEnv, discover_account_envs, select_accounts
-from .runners import RUN_STATUS_FAILURE, RunnerContext, RunnerError, run_mode
+from .runners import RUN_STATUS_FAILURE, RunnerContext, RunnerError, SystemPowerController, run_mode
 from .updater import build_update_plan, run_commands
 
-RunMode = Literal["daily", "stamina"]
+RunMode = Literal["daily", "stamina", "weekly", "stamina-weekly"]
 DEFAULT_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -54,9 +55,23 @@ def main(argv: list[str] | None = None) -> int:
         if args.dry_run:
             return 0
         validate_jobs(plan.jobs, project_root=project_root)
+        if args.mode == "weekly":
+            # WeeklyRunner checks weekly success before updating or starting the game.
+            run_jobs(
+                plan.jobs, project_root=project_root, env_dir=env_dir, ww_root=ww_root,
+                ww_remote=args.ww_remote, ww_branch=args.ww_branch,
+                run_now=args.run_now, skip_update=args.skip_update,
+            )
+            return 0
         if not args.skip_update:
             update_plan = build_update_plan(ww_root=ww_root, remote=args.ww_remote, branch=args.ww_branch)
             run_commands(update_plan.commands)
+        if args.mode == "stamina-weekly":
+            run_stamina_weekly_jobs(
+                plan.jobs, project_root=project_root, env_dir=env_dir, ww_root=ww_root,
+                ww_remote=args.ww_remote, ww_branch=args.ww_branch,
+            )
+            return 0
         run_jobs(
             plan.jobs,
             project_root=project_root,
@@ -64,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
             ww_root=ww_root,
             ww_remote=args.ww_remote,
             ww_branch=args.ww_branch,
+            **({"shutdown_request_file": Path(args.shutdown_request_file)} if args.shutdown_request_file else {}),
         )
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -76,13 +92,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--project-root", help="Automator project root. Defaults to this package checkout.")
     parser.add_argument("--env-dir", default="env", help="Directory containing account env files.")
     parser.add_argument("--account", action="append", help="Account id to run. Can be supplied multiple times.")
-    parser.add_argument("--mode", choices=["daily", "stamina"], required=True)
+    parser.add_argument("--mode", choices=["daily", "stamina", "weekly", "stamina-weekly"], required=True)
+    parser.add_argument("--shutdown-request-file", help=argparse.SUPPRESS)
+    parser.add_argument("--run-now", action="store_true", help="Run weekly manually, even if this week already succeeded.")
     parser.add_argument("--dry-run", action="store_true", help="Print the plan without updating or running jobs.")
     parser.add_argument("--skip-update", action="store_true", help="Skip ok-wuthering-waves update commands.")
     parser.add_argument("--ww-root", help="Path to ok-wuthering-waves. Defaults beside this repo.")
     parser.add_argument("--ww-remote", default="origin")
     parser.add_argument("--ww-branch", default="master")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.shutdown_request_file and (args.mode != "stamina" or len(args.account or []) != 1):
+        parser.error("--shutdown-request-file requires --mode stamina and exactly one --account")
+    return args
 
 
 def build_scheduler_plan(
@@ -101,8 +122,8 @@ def build_scheduler_plan(
         raise RuntimeError(f"No account env files found in {env_dir}")
 
     jobs = []
-    for account in accounts:
-        for resolved_mode in resolve_modes(mode):
+    for resolved_mode in resolve_modes(mode):
+        for account in accounts:
             jobs.append(SchedulerJob(account=account, mode=resolved_mode))
 
     update_commands: tuple[str, ...] = ()
@@ -118,12 +139,19 @@ def build_scheduler_plan(
 
 
 def resolve_modes(mode: RunMode) -> tuple[str, ...]:
+    if mode == "stamina-weekly":
+        return ("stamina", "weekly")
     return (mode,)
 
 
-def run_job(job: SchedulerJob, *, project_root: Path, ww_root: Path) -> None:
+def run_job(
+    job: SchedulerJob, *, project_root: Path, ww_root: Path,
+    run_now: bool = False, prepare: Callable[[float], None] | None = None,
+    shutdown_request_file: Path | None = None,
+) -> None:
     app_config = validate_job(job, project_root=project_root)
-    result = run_mode(job.mode, RunnerContext(app_config=app_config, ww_root=ww_root))
+    result = run_mode(job.mode, RunnerContext(app_config=app_config, ww_root=ww_root, run_now=run_now,
+                                            prepare=prepare, shutdown_request_file=shutdown_request_file))
     if result.status == RUN_STATUS_FAILURE:
         raise RunnerError(f"Account {job.account.account_id} {job.mode} task failed: {result.error}")
 
@@ -136,14 +164,27 @@ def run_jobs(
     ww_root: Path,
     ww_remote: str,
     ww_branch: str,
+    run_now: bool = False,
+    skip_update: bool = True,
+    shutdown_request_file: Path | None = None,
 ) -> None:
     if len(jobs) == 1:
-        run_job(jobs[0], project_root=project_root, ww_root=ww_root)
+        if jobs[0].mode == "weekly":
+            def prepare(timeout: float) -> None:
+                run_commands(build_update_plan(ww_root=ww_root, remote=ww_remote, branch=ww_branch).commands,
+                             timeout=timeout)
+
+            run_job(jobs[0], project_root=project_root, ww_root=ww_root,
+                    run_now=run_now, prepare=None if skip_update else prepare)
+        else:
+            run_job(jobs[0], project_root=project_root, ww_root=ww_root,
+                    shutdown_request_file=shutdown_request_file)
         return
 
     errors: list[str] = []
     for job in jobs:
         try:
+            weekly_options = {"run_now": run_now, "skip_update": skip_update} if job.mode == "weekly" else {}
             run_job_subprocess(
                 job,
                 project_root=project_root,
@@ -151,6 +192,7 @@ def run_jobs(
                 ww_root=ww_root,
                 ww_remote=ww_remote,
                 ww_branch=ww_branch,
+                **weekly_options,
             )
         except subprocess.CalledProcessError as exc:
             errors.append(f"{job.account.account_id}/{job.mode}: exited {exc.returncode}")
@@ -167,6 +209,9 @@ def run_job_subprocess(
     ww_root: Path,
     ww_remote: str,
     ww_branch: str,
+    run_now: bool = False,
+    skip_update: bool = True,
+    shutdown_request_file: Path | None = None,
 ) -> None:
     command = [
         sys.executable,
@@ -186,11 +231,44 @@ def run_job_subprocess(
         job.mode,
         "--account",
         job.account.account_id,
-        "--skip-update",
     ]
+    if skip_update:
+        command.append("--skip-update")
+    if run_now:
+        command.append("--run-now")
+    if shutdown_request_file is not None:
+        command.extend(("--shutdown-request-file", str(shutdown_request_file)))
     env = dict(os.environ)
     env["ENV_FILE"] = str(job.account.path)
     subprocess.run(command, env=env, check=True)
+
+
+def run_stamina_weekly_jobs(
+    jobs: tuple[SchedulerJob, ...], *, project_root: Path, env_dir: Path,
+    ww_root: Path, ww_remote: str, ww_branch: str,
+) -> None:
+    errors = []
+    with tempfile.TemporaryDirectory(prefix="ok-ww-shutdown-") as directory:
+        shutdown_request = Path(directory) / "requested.txt"
+        try:
+            # Plan order is all stamina accounts (including their Healthchecks),
+            # then all weekly accounts. Each runner remains process-isolated.
+            for job in jobs:
+                try:
+                    run_job_subprocess(
+                        job, project_root=project_root, env_dir=env_dir, ww_root=ww_root,
+                        ww_remote=ww_remote, ww_branch=ww_branch,
+                        shutdown_request_file=shutdown_request if job.mode == "stamina" else None,
+                    )
+                except Exception as exc:
+                    message = f"{job.account.account_id}/{job.mode}: {exc}"
+                    errors.append(message)
+                    print(f"ERROR: {message}", file=sys.stderr)
+        finally:
+            if shutdown_request.exists():
+                SystemPowerController().request_shutdown("stamina-weekly")
+    if errors:
+        raise RunnerError(f"{len(errors)} job(s) failed: " + "; ".join(errors))
 
 
 def validate_jobs(jobs: tuple[SchedulerJob, ...], *, project_root: Path) -> None:

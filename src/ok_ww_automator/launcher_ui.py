@@ -75,7 +75,7 @@ class LauncherWindow(FluentWindow):
         self._build_scheduler_page()
         self._build_tools_page()
         self._build_logs_page()
-        self.addSubInterface(self.scheduler_page, FIF.CALENDAR, "日常与体力")
+        self.addSubInterface(self.scheduler_page, FIF.CALENDAR, "日常 / 体力 / 周常")
         self.addSubInterface(self.tools_page, FIF.ROBOT, "OK 工具")
         self.addSubInterface(self.farm_page, FIF.GAME, "Auto Farm")
         self.addSubInterface(self.logs_page, FIF.DOCUMENT, "运行日志", NavigationItemPosition.BOTTOM)
@@ -164,10 +164,12 @@ class LauncherWindow(FluentWindow):
         layout.addStretch()
 
     def _build_scheduler_page(self):
-        self.scheduler_page, layout = self._page("scheduler", "日常与体力", "选择账号，按列表顺序依次执行。")
+        self.scheduler_page, layout = self._page("scheduler", "日常 / 体力 / 周常", "体力 + 周常：先完成体力监控，再做周常，最后按配置关机。单独周常可重复运行。")
         self.mode_picker = SegmentedWidget(self.scheduler_page)
         self.mode_picker.addItem("daily", "每日任务", lambda: self._set_mode("daily"))
         self.mode_picker.addItem("stamina", "消耗体力", lambda: self._set_mode("stamina"))
+        self.mode_picker.addItem("weekly", "周常乐园", lambda: self._set_mode("weekly"))
+        self.mode_picker.addItem("stamina-weekly", "体力 + 周常", lambda: self._set_mode("stamina-weekly"))
         self.mode_picker.setCurrentItem("daily")
         layout.addWidget(self.mode_picker)
 

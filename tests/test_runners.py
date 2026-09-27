@@ -1,12 +1,15 @@
 import datetime as dt
+from dataclasses import replace
 from pathlib import Path
 import sys
+import subprocess
+import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from ok_ww_automator.config import RetryConfig
+from ok_ww_automator.config import AppConfig, NoticeConfig, RetryConfig, WeeklyRunConfig
 from ok_ww_automator.models import RunResult, SheetRunConfig
 from ok_ww_automator.runners import (
     DailyRunner,
@@ -15,9 +18,227 @@ from ok_ww_automator.runners import (
 from ok_ww_automator.game_clients import (
     DailyGameOutcome,
     StaminaGameOutcome,
+    WeeklyGameOutcome,
 )
 from ok_ww_automator.time_utils import BEIJING_TZ
 from ok_ww_automator.waves_api import WavesDailyInfo
+from ok_ww_automator.weekly import WeeklyRunner, week_start, weekly_notice_start
+
+
+class WeeklyRunnerTest(unittest.TestCase):
+    def test_total_budget_is_shared_by_preparation_retries_and_game_subprocesses(self):
+        elapsed = 0.0
+        stamp = dt.datetime(2026, 10, 2, 5, tzinfo=BEIJING_TZ)
+        config = replace(self.config, retry=RetryConfig(3, 10))
+        def prepare(timeout):
+            nonlocal elapsed
+            self.assertEqual(timeout, 60)
+            elapsed += 10
+        def game(*, timeout):
+            nonlocal elapsed
+            if elapsed == 10:
+                elapsed += 20
+                return WeeklyGameOutcome(task_error="first failed")
+            elapsed += timeout
+            raise subprocess.TimeoutExpired("game", timeout)
+        def sleep(seconds):
+            nonlocal elapsed
+            elapsed += seconds
+        self.game.run_weekly.side_effect = game
+        runner = WeeklyRunner(config, self.game, prepare=prepare, clock=lambda: stamp,
+                              monotonic=lambda: elapsed, sleep=sleep, timeout_seconds=60)
+        result = runner.run()
+        self.assertEqual(result.status, "failure")
+        self.assertIn("总时限", result.error)
+        self.assertEqual([call.kwargs["timeout"] for call in self.game.run_weekly.call_args_list], [50, 20])
+        self.assertEqual(elapsed, 60)
+        self.wx.notify.assert_called_once()
+
+    def test_preparation_timeout_does_not_launch_game(self):
+        elapsed = 0.0
+        stamp = dt.datetime(2026, 10, 2, 5, tzinfo=BEIJING_TZ)
+        def prepare(timeout):
+            nonlocal elapsed
+            elapsed = timeout
+            raise subprocess.TimeoutExpired("update", timeout)
+        result = WeeklyRunner(self.config, self.game, prepare=prepare, clock=lambda: stamp,
+                              monotonic=lambda: elapsed, timeout_seconds=60).run()
+        self.assertEqual(result.status, "failure")
+        self.assertIn("总时限", result.error)
+        self.game.run_weekly.assert_not_called()
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.config = AppConfig(
+            root, root / "env" / "cn.env",
+            weekly_run=WeeklyRunConfig(notice_day=5),
+            retry=RetryConfig(2, 0),
+            notice=NoticeConfig(enabled=True, channels=("wxpusher",), wxpusher_spt="test"),
+        )
+        self.game = Mock()
+        self.game.run_weekly.return_value = WeeklyGameOutcome(task_error="garden failed")
+        self.prepare = Mock()
+        self.wx_patch = patch("ok_ww_automator.weekly.WxPusherNoticeClient")
+        self.wx = self.wx_patch.start().return_value
+        self.addCleanup(self.wx_patch.stop)
+
+    def run_at(self, value, *, run_now=False, config=None):
+        current = dt.datetime.fromisoformat(value).replace(tzinfo=BEIJING_TZ)
+        return WeeklyRunner(config or self.config, self.game, run_now=run_now,
+                            prepare=self.prepare, clock=lambda: current, sleep=lambda _: None).run()
+
+    def test_weekly_allows_at_most_one_retry_per_invocation(self):
+        config = replace(self.config, retry=RetryConfig(10, 0))
+        self.run_at("2026-09-28T05:00", config=config)
+        self.assertEqual(self.game.run_weekly.call_count, 2)
+        self.run_at("2026-09-28T09:00", config=config)
+        self.assertEqual(self.game.run_weekly.call_count, 4)
+
+    def test_failed_days_retry_then_success_skips_scheduled_but_not_manual(self):
+        self.assertEqual(self.run_at("2026-09-28T05:00").status, "needs review")
+        self.assertEqual(self.game.run_weekly.call_count, 2)
+        self.run_at("2026-09-28T09:00")
+        self.run_at("2026-09-29T05:00")
+        self.assertEqual(self.game.run_weekly.call_count, 6)
+        self.game.run_weekly.return_value = WeeklyGameOutcome(completed=True)
+        self.assertEqual(self.run_at("2026-09-30T05:00").status, "success")
+        self.assertEqual(self.run_at("2026-10-02T05:00").status, "skipped")
+        self.assertEqual(self.run_at("2026-10-02T05:00", run_now=True).status, "success")
+        self.assertEqual(self.game.run_weekly.call_count, 8)
+        self.assertEqual(self.prepare.call_count, 5)
+        self.wx.notify.assert_not_called()
+
+    def test_failed_manual_rerun_preserves_prior_success_without_weekly_failure_notice(self):
+        self.game.run_weekly.return_value = WeeklyGameOutcome(completed=True)
+        self.run_at("2026-09-28T05:00")
+        self.game.run_weekly.return_value = WeeklyGameOutcome(task_error="manual failed")
+        result = self.run_at("2026-10-02T05:00", run_now=True)
+        self.assertEqual(result.status, "failure")
+        self.assertIn("保留", result.decision)
+        self.assertEqual(self.run_at("2026-10-02T05:05").status, "skipped")
+        self.assertEqual(self.game.run_weekly.call_count, 3)
+        self.wx.notify.assert_not_called()
+
+    def test_final_day_failure_notifies_once(self):
+        self.run_at("2026-09-28T05:00")
+        self.wx.notify.assert_not_called()
+        result = self.run_at("2026-10-02T05:00")
+        self.assertEqual(result.status, "failure")
+        self.wx.notify.assert_called_once()
+        self.assertIn("2026-09-28", result.decision)
+        self.run_at("2026-10-02T05:05")
+        self.run_at("2026-10-03T05:00")
+        self.assertEqual(self.game.run_weekly.call_count, 8)
+        self.wx.notify.assert_called_once()
+
+    def test_failed_notice_retries_on_later_runs(self):
+        self.wx.notify.side_effect = [RuntimeError("offline"), None]
+        self.assertEqual(self.run_at("2026-10-02T05:00").status, "failure")
+        self.run_at("2026-10-02T05:05")
+        self.run_at("2026-10-02T05:10")
+        self.assertEqual(self.game.run_weekly.call_count, 6)
+        self.assertEqual(self.wx.notify.call_count, 2)
+
+    def test_after_notice_day_still_runs_game_before_reporting_failure(self):
+        result = self.run_at("2026-10-03T05:00")
+        self.assertEqual(result.status, "failure")
+        self.assertEqual(self.game.run_weekly.call_count, 2)
+        self.prepare.assert_called_once()
+        self.wx.notify.assert_called_once()
+
+    def test_recorded_unfinished_previous_week_reports_after_reset(self):
+        self.run_at("2026-09-28T05:00")
+        self.game.run_weekly.return_value = WeeklyGameOutcome(completed=True)
+        result = self.run_at("2026-10-05T05:00")
+        self.assertEqual(result.status, "success")
+        self.assertIsNone(result.error)
+        self.wx.notify.assert_called_once()
+        self.assertIn("2026-09-28", self.wx.notify.call_args.args[0].decision)
+
+    def test_disabled_notifications_do_not_prevent_later_game_attempts(self):
+        config = replace(self.config, notice=NoticeConfig())
+        self.assertEqual(self.run_at("2026-10-02T05:00", config=config).status, "failure")
+        self.run_at("2026-10-02T05:05", config=config)
+        self.assertEqual(self.game.run_weekly.call_count, 4)
+        self.wx.notify.assert_not_called()
+
+    def test_any_trigger_can_run_without_env_schedule(self):
+        config = replace(self.config, weekly_run=WeeklyRunConfig())
+        self.game.run_weekly.return_value = WeeklyGameOutcome(completed=True)
+        self.assertEqual(self.run_at("2026-09-29T01:00", config=config).status, "success")
+        self.prepare.assert_called_once()
+
+    def test_success_on_notice_day_does_not_notify(self):
+        self.game.run_weekly.return_value = WeeklyGameOutcome(completed=True)
+        self.assertEqual(self.run_at("2026-10-02T05:00").status, "success")
+        self.wx.notify.assert_not_called()
+
+    def test_confirmed_completion_with_error_is_saved_without_retry_or_notice(self):
+        self.game.run_weekly.return_value = WeeklyGameOutcome(completed=True, task_error="reward failed")
+        self.assertEqual(self.run_at("2026-10-02T05:00").status, "success")
+        self.assertEqual(self.run_at("2026-10-02T06:00").status, "skipped")
+        self.game.run_weekly.assert_called_once()
+        self.wx.notify.assert_not_called()
+
+    def test_manual_failure_does_not_prevent_next_scheduled_attempt(self):
+        self.run_at("2026-09-28T04:30", run_now=True)
+        self.game.run_weekly.return_value = WeeklyGameOutcome(completed=True)
+        self.assertEqual(self.run_at("2026-09-28T05:00").status, "success")
+        self.assertEqual(self.game.run_weekly.call_count, 3)
+
+    def test_account_completion_is_isolated(self):
+        self.game.run_weekly.return_value = WeeklyGameOutcome(completed=True)
+        self.run_at("2026-09-28T05:00")
+        other = replace(self.config, env_path=self.config.env_path.with_name("global.env"))
+        self.assertEqual(self.run_at("2026-09-28T05:00", config=other).status, "success")
+        self.assertEqual(self.game.run_weekly.call_count, 2)
+
+    def test_concurrent_same_account_is_skipped(self):
+        def overlapping(*, timeout):
+            result = self.run_at("2026-09-28T05:00", run_now=True)
+            self.assertEqual(result.status, "skipped")
+            self.assertIn("正在运行", result.decision)
+            return WeeklyGameOutcome(completed=True)
+        self.game.run_weekly.side_effect = overlapping
+        self.assertEqual(self.run_at("2026-09-28T05:00").status, "success")
+        self.game.run_weekly.assert_called_once()
+
+    def test_update_failure_is_recorded_and_notified_on_final_day(self):
+        self.prepare.side_effect = RuntimeError("update failed")
+        result = self.run_at("2026-10-02T05:00")
+        self.assertEqual(result.status, "failure")
+        self.assertIn("update failed", result.error)
+        self.game.run_weekly.assert_not_called()
+        self.wx.notify.assert_called_once()
+
+    def test_reset_boundary_and_notice_day(self):
+        before = dt.datetime(2026, 10, 5, 3, 59, tzinfo=BEIJING_TZ)
+        self.assertEqual(week_start(before).date().isoformat(), "2026-09-28")
+        self.assertEqual(week_start(before + dt.timedelta(minutes=1)).date().isoformat(), "2026-10-05")
+        self.assertEqual(week_start(before.astimezone(dt.timezone.utc)), week_start(before))
+        self.assertEqual(weekly_notice_start(week_start(before), 5), dt.datetime(2026, 10, 2, tzinfo=BEIJING_TZ))
+        self.assertEqual(weekly_notice_start(week_start(before), 1), week_start(before))
+        self.game.run_weekly.return_value = WeeklyGameOutcome(completed=True)
+        self.run_at("2026-09-28T05:00")
+        self.run_at("2026-10-05T03:59")
+        self.assertEqual(self.game.run_weekly.call_count, 1)
+        self.run_at("2026-10-05T04:00", run_now=True)
+        self.assertEqual(self.game.run_weekly.call_count, 2)
+
+    def test_completion_across_reset_is_not_credited_to_either_week(self):
+        current = dt.datetime(2026, 10, 5, 3, 59, tzinfo=BEIJING_TZ)
+        def complete(*, timeout):
+            nonlocal current
+            current += dt.timedelta(minutes=2)
+            return WeeklyGameOutcome(completed=True)
+        self.game.run_weekly.side_effect = complete
+        runner = WeeklyRunner(self.config, self.game, run_now=True, clock=lambda: current)
+        self.assertEqual(runner.run().status, "failure")
+        self.game.run_weekly.side_effect = None
+        self.game.run_weekly.return_value = WeeklyGameOutcome(completed=True)
+        self.assertEqual(self.run_at("2026-10-05T05:00").status, "success")
 
 
 FIXED_NOW = dt.datetime(2026, 5, 16, 5, 0, tzinfo=BEIJING_TZ)

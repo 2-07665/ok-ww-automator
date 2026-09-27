@@ -1,6 +1,10 @@
 # OK Automator Launcher (Windows)
 
-`OK Automator Launcher` is a small elevated desktop front end for the existing Automator entrypoints. It discovers profiles from `env/*.env`, launches the regular OK GUI or one selected account's game, and runs Daily or Stamina scheduling for selected accounts in the displayed order. It does not install, repair, activate, or update Python environments.
+`OK Automator Launcher` is a small elevated desktop front end for the existing Automator entrypoints. It discovers profiles from `env/*.env`, launches the regular OK GUI or one selected account's game, and runs Daily, Stamina, or Weekly scheduling for selected accounts in the displayed order. It does not install, repair, activate, or update Python environments.
+
+The first page's **Weekly Garden** option launches the game and runs Garden immediately, even after weekly success. Success updates the weekly record; a failed rerun preserves prior success. Weeks reset Monday at 04:00 Beijing time. See [weekly scheduling](scheduler.md#weekly-garden) for scheduling and failure notices. Rebuild the launcher EXE to add this button.
+
+The first page also offers **Stamina + Weekly**: finish all stamina Healthchecks, run unfinished weekly jobs, then honor the original stamina shutdown requests once. See [combined scheduling](scheduler.md#stamina--weekly-garden--shutdown).
 
 ## Workspace and executable placement
 

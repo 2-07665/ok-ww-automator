@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
+
+from .processes import run_with_timeout
 
 
 @dataclass(frozen=True)
@@ -42,6 +45,11 @@ def build_update_plan(
     )
 
 
-def run_commands(commands: Sequence[CommandSpec]) -> None:
+def run_commands(commands: Sequence[CommandSpec], *, timeout: float | None = None) -> None:
+    deadline = time.monotonic() + timeout if timeout is not None else None
     for command in commands:
-        subprocess.run(command.args, cwd=command.cwd, check=True)
+        if deadline is None:
+            subprocess.run(command.args, cwd=command.cwd, check=True)
+        else:
+            result = run_with_timeout(command.args, cwd=command.cwd, timeout=deadline - time.monotonic())
+            result.check_returncode()

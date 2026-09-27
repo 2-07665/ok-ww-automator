@@ -149,8 +149,11 @@ def build_notice_message(
 ) -> NoticeMessage:
     derived = result.derive()
     account_prefix = f"[{account_id}] " if account_id else ""
-    task_label = "日常" if result.task_type == "daily" else "体力"
+    task_label = {"daily": "日常", "stamina": "体力", "weekly": "周常乐园"}[result.task_type]
     subject = f"{account_prefix}{derived.end_time:%m-%d} 鸣潮{task_label}任务 · {status_label(result.status)}"
+    if result.task_type == "weekly":
+        text = "\n".join([subject, derived.decision, derived.error])
+        return NoticeMessage(subject=subject, text=text, html=f"<pre>{html.escape(text)}</pre>")
     variables = build_template_variables(result, sheet_config, account_prefix=account_prefix, derived=derived)
     lines = text_summary_lines(result, sheet_config, variables, task_label=task_label)
     text = "\n".join(lines)
