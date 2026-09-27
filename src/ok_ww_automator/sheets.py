@@ -13,6 +13,7 @@ import sys
 from typing import Any, Protocol
 
 from .config import GoogleSheetsConfig, load_config, parse_bool
+from .console import console_print
 from .models import FastFarmResult, RunResult, SheetRunConfig
 
 VALUE_INPUT_USER_ENTERED = "USER_ENTERED"
@@ -212,14 +213,14 @@ def main(argv: list[str] | None = None) -> int:
         store = GoogleSheetsStore.from_config(app_config.google_sheets)
         parsed = store.fetch_parsed_config()
         run_config = store.parser.to_run_config(parsed)
-        print(json.dumps(asdict(run_config), ensure_ascii=False, indent=2))
+        console_print(json.dumps(asdict(run_config), ensure_ascii=True, indent=2))
         if args.show_cells:
-            print("\nConfig cells:")
+            console_print("\nConfig cells:")
             for label in sorted(parsed.entries):
                 entry = parsed.entries[label]
-                print(f"{label}: {entry.value!r} ({entry.value_a1})")
+                console_print(f"{label}: {entry.value!r} ({entry.value_a1})")
     except Exception as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        console_print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     return 0
 

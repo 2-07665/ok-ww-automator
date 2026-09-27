@@ -14,6 +14,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+from .console import console_print
+
 
 CONTRACTS = Path(__file__).with_name("upstream_contracts.json")
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -268,14 +270,14 @@ def main(argv: list[str] | None = None) -> int:
                        ok_root=args.ok_script_root.resolve() if args.ok_script_root else installed_ok_root(),
                        source_only=args.source_only, remote=args.check_remote)
     if args.json:
-        print(json.dumps([asdict(item) for item in results], ensure_ascii=False, indent=2))
+        console_print(json.dumps([asdict(item) for item in results], ensure_ascii=True, indent=2))
     else:
         for item in results:
-            print(f"[{item.status}] {item.check}: {item.detail}")
+            console_print(f"[{item.status}] {item.check}: {item.detail}")
         counts = {status: sum(item.status == status for item in results)
                   for status in ("PASS", "WARN", "FAIL", "MANUAL")}
-        print("\n" + ", ".join(f"{count} {status}" for status, count in counts.items()))
-        print("Source checks cannot verify live capture, OCR, combat, or external services. See docs/maintenance.md.")
+        console_print("\n" + ", ".join(f"{count} {status}" for status, count in counts.items()))
+        console_print("Source checks cannot verify live capture, OCR, combat, or external services. See docs/maintenance.md.")
     return int(any(item.status == "FAIL" or (args.strict and item.status == "WARN") for item in results))
 
 

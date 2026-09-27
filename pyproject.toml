@@ -1,6 +1,6 @@
 [project]
 name = "ok-ww-automator"
-version = "0.3.0"
+version = "0.3.1"
 description = "CLI automation helpers for Wuthering Waves daily routines"
 readme = "README.md"
 requires-python = "~=3.12.0"

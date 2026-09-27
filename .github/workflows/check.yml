@@ -24,3 +24,6 @@ jobs:
           version: "0.11.13"
           python-version: "3.12"
       - run: uv run --locked python -m unittest discover -s tests
+        env:
+          # Exercise redirected output on non-UTF-8 Windows installations.
+          PYTHONIOENCODING: ${{ runner.os == 'Windows' && 'cp1252' || 'utf-8' }}

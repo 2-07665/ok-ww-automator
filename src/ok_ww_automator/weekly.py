@@ -11,6 +11,7 @@ from dataclasses import replace
 from typing import Callable
 
 from .config import AppConfig
+from .console import console_print
 from .game_clients import WeeklyGameClient
 from .models import RunResult, SheetRunConfig
 from .notices import WxPusherNoticeClient
@@ -90,7 +91,7 @@ class WeeklyRunner:
             ).fetchall():
                 previous = RunResult("weekly", current, current, "failure")
                 self._finish_failure(db, row, previous)
-                print(f"Weekly: {previous.decision}; {previous.error}")
+                console_print(f"Weekly: {previous.decision}; {previous.error}")
 
             deadline = weekly_notice_start(start, self.config.weekly_run.notice_day)
             db.execute("INSERT OR IGNORE INTO weeks (week) VALUES (?)", (week,))
@@ -127,7 +128,7 @@ class WeeklyRunner:
             db.commit()
             db.close()
             result.ended_at = self.clock().astimezone(BEIJING_TZ)
-            print(f"Weekly: {result.status}; {result.decision or ''}; {result.error or ''}")
+            console_print(f"Weekly: {result.status}; {result.decision or ''}; {result.error or ''}")
 
     def _attempt(self, start: dt.datetime) -> str | None:
         attempts = min(self.config.retry.max_attempts, WEEKLY_MAX_ATTEMPTS)
@@ -151,7 +152,7 @@ class WeeklyRunner:
                     if week_start(self.clock()) != start:
                         return "任务执行跨过周一 04:00，本次未计为该周成功"
                     if outcome.task_error:
-                        print(f"Garden 已确认完成，保留上游报错供排查: {outcome.task_error}")
+                        console_print(f"Garden 已确认完成，保留上游报错供排查: {outcome.task_error}")
                     return None
                 error = outcome.task_error or "Garden 未确认完成"
             except Exception as exc:

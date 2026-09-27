@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable, Literal
 
 from .config import AppConfig, load_config
+from .console import console_print
 from .env_discovery import AccountEnv, discover_account_envs, select_accounts
 from .runners import RUN_STATUS_FAILURE, RunnerContext, RunnerError, SystemPowerController, run_mode
 from .updater import build_update_plan, run_commands
@@ -83,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
             **({"shutdown_request_file": Path(args.shutdown_request_file)} if args.shutdown_request_file else {}),
         )
     except Exception as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        console_print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     return 0
 
@@ -267,7 +268,7 @@ def run_isolated_jobs(
                     detail = f"exited {exc.returncode}" if isinstance(exc, subprocess.CalledProcessError) else str(exc)
                     message = f"{job.account.account_id}/{job.mode}: {detail}"
                     errors.append(message)
-                    print(f"ERROR: {message}", file=sys.stderr)
+                    console_print(f"ERROR: {message}", file=sys.stderr)
         finally:
             if shutdown_request.exists():
                 SystemPowerController().request_shutdown(shutdown_reason)
@@ -289,22 +290,22 @@ def validate_job(job: SchedulerJob, *, project_root: Path) -> AppConfig:
 
 
 def print_plan(plan: SchedulerPlan, *, dry_run: bool) -> None:
-    print(f"Project: {plan.project_root}")
-    print(f"Dry run: {'yes' if dry_run else 'no'}")
+    console_print(f"Project: {plan.project_root}")
+    console_print(f"Dry run: {'yes' if dry_run else 'no'}")
     if plan.update_commands:
-        print("Update commands:")
+        console_print("Update commands:")
         for command in plan.update_commands:
-            print(f"  {command}")
+            console_print(f"  {command}")
     else:
-        print("Update commands: skipped")
+        console_print("Update commands: skipped")
 
-    print("Accounts:")
+    console_print("Accounts:")
     for account in plan.accounts:
-        print(f"  {account.account_id}: {account.path}")
+        console_print(f"  {account.account_id}: {account.path}")
 
-    print("Jobs:")
+    console_print("Jobs:")
     for job in plan.jobs:
-        print(f"  {job.account.account_id}: {job.mode}")
+        console_print(f"  {job.account.account_id}: {job.mode}")
 
 
 if __name__ == "__main__":
