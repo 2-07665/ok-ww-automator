@@ -112,6 +112,8 @@ def run_mode(mode: str, context: RunnerContext) -> RunResult:
             notice_client=notice_client,
             skip_success_notice=context.app_config.notice.skip_success,
             healthcheck_monitor=healthcheck_monitor,
+            daily_hour=context.app_config.daily_run_time.hour,
+            daily_minute=context.app_config.daily_run_time.minute,
         ).run()
     if mode == "stamina":
         store = GoogleSheetsStore.from_config(context.app_config.google_sheets)
@@ -154,6 +156,8 @@ class DailyRunner:
         skip_success_notice: bool = False,
         healthcheck_monitor: HealthcheckMonitor | None = None,
         sleep: Callable[[float], None] = time.sleep,
+        daily_hour: int = 5,
+        daily_minute: int = 0,
     ) -> None:
         self.store = store
         self.game_client = game_client
@@ -164,6 +168,8 @@ class DailyRunner:
         self.skip_success_notice = skip_success_notice
         self.healthcheck_monitor = healthcheck_monitor or NullHealthcheckMonitor()
         self.sleep = sleep
+        self.daily_hour = daily_hour
+        self.daily_minute = daily_minute
 
     def run(self) -> RunResult:
         sheet_config, config_error = self.store.fetch_run_config_or_default()
@@ -173,6 +179,8 @@ class DailyRunner:
             ended_at=None,
             status=RUN_STATUS_RUNNING,
             run_nightmare=sheet_config.should_run_nightmare,
+            daily_hour=self.daily_hour,
+            daily_minute=self.daily_minute,
         )
         self.start_healthcheck(result)
         if config_error:
@@ -313,6 +321,8 @@ class StaminaRunner:
             started_at=now(),
             ended_at=None,
             status=RUN_STATUS_RUNNING,
+            daily_hour=self.daily_hour,
+            daily_minute=self.daily_minute,
         )
         self.start_healthcheck(result)
         if config_error:

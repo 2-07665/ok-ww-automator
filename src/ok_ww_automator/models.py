@@ -91,6 +91,9 @@ class RunResult:
     decision: str | None = None
     error: str | None = None
 
+    daily_hour: int = DEFAULT_DAILY_RUN_HOUR
+    daily_minute: int = DEFAULT_DAILY_RUN_MINUTE
+
     def ensure_ended_at(self) -> dt.datetime:
         if self.ended_at is None:
             self.ended_at = now()
@@ -100,8 +103,8 @@ class RunResult:
         self,
         *,
         end_time: dt.datetime | None = None,
-        daily_hour: int = DEFAULT_DAILY_RUN_HOUR,
-        daily_minute: int = DEFAULT_DAILY_RUN_MINUTE,
+        daily_hour: int | None = None,
+        daily_minute: int | None = None,
     ) -> DerivedRunFields:
         resolved_end = end_time if end_time is not None else (self.ended_at or now())
         duration_seconds = max(0, int(round((resolved_end - self.started_at).total_seconds())))
@@ -110,7 +113,11 @@ class RunResult:
             next_daily_stamina, next_daily_backup = predict_future_stamina(
                 self.stamina_left,
                 self.backup_stamina_left,
-                minutes_until_target_time(daily_hour, daily_minute, resolved_end),
+                minutes_until_target_time(
+                    self.daily_hour if daily_hour is None else daily_hour,
+                    self.daily_minute if daily_minute is None else daily_minute,
+                    resolved_end,
+                ),
             )
         else:
             next_daily_stamina, next_daily_backup = "", ""

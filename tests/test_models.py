@@ -10,6 +10,15 @@ from ok_ww_automator.time_utils import BEIJING_TZ
 
 
 class ModelsTest(unittest.TestCase):
+    def test_report_target_survives_repeated_derivation_and_temporary_overrides(self):
+        stamp = dt.datetime(2026, 5, 16, 23, 30, tzinfo=BEIJING_TZ)
+        result = RunResult("stamina", stamp, stamp, "success", stamina_left=100,
+                           backup_stamina_left=0, daily_hour=0, daily_minute=30)
+        self.assertEqual(result.derive().next_daily_stamina, "110")
+        self.assertEqual(result.derive(daily_hour=1).next_daily_stamina, "120")
+        self.assertEqual(result.as_stamina_row()[9], "110")
+        self.assertEqual(result.derive().next_daily_stamina, "110")
+
     def test_run_result_derives_report_fields(self) -> None:
         started = dt.datetime(2026, 5, 16, 3, 0, tzinfo=BEIJING_TZ)
         ended = dt.datetime(2026, 5, 16, 4, 0, tzinfo=BEIJING_TZ)

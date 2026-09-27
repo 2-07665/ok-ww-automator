@@ -9,11 +9,14 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from ok_ww_automator.config import AppConfig, NoticeConfig, RetryConfig, WeeklyRunConfig
+from ok_ww_automator.config import AppConfig, DailyRunTimeConfig, NoticeConfig, RetryConfig, WeeklyRunConfig
 from ok_ww_automator.models import RunResult, SheetRunConfig
+from ok_ww_automator.notices import build_notice_message
 from ok_ww_automator.runners import (
     DailyRunner,
+    RunnerContext,
     StaminaRunner,
+    run_mode,
 )
 from ok_ww_automator.game_clients import (
     DailyGameOutcome,
@@ -411,6 +414,31 @@ class FakeHealthcheckMonitor:
 
 
 class DailyRunnerTest(unittest.TestCase):
+    def test_account_daily_target_reaches_both_sheet_and_notice_predictions(self):
+        stamp = dt.datetime(2026, 5, 16, 3, 0, tzinfo=BEIJING_TZ)
+        app_config = AppConfig(Path("/project"), Path("/project/env/cn.env"),
+                               daily_run_time=DailyRunTimeConfig(4, 30))
+        context = RunnerContext(app_config, Path("/ww"))
+        for mode, prediction_column in (("daily", 10), ("stamina", 9)):
+            store = FakeStore()
+            notices = FakeNoticeClient()
+            with (
+                self.subTest(mode=mode),
+                patch("ok_ww_automator.runners.now", return_value=stamp),
+                patch("ok_ww_automator.runners.GoogleSheetsStore.from_config", return_value=store),
+                patch("ok_ww_automator.runners.notice_client_from_config", return_value=notices),
+                patch("ok_ww_automator.runners.SubprocessDailyGameClient", return_value=FakeGameClient(
+                    DailyGameOutcome(100, 0, 100, 0, 100))),
+                patch("ok_ww_automator.runners.SubprocessStaminaGameClient", return_value=FakeStaminaGameClient()),
+            ):
+                result = run_mode(mode, context)
+                stored = (store.daily_results if mode == "daily" else store.stamina_results)[0]
+                row = stored.as_daily_row() if mode == "daily" else stored.as_stamina_row()
+                self.assertEqual(row[prediction_column], "115")
+                reported, sheet_config = notices.calls[0]
+                self.assertIn("结晶波片：115", build_notice_message(reported, sheet_config).html)
+                self.assertEqual(result.derive().next_daily_stamina, "115")
+
     def test_daily_failed_retry_preserves_partial_metrics_and_actual_end_time(self):
         game = Mock()
         game.run_daily.side_effect = [
