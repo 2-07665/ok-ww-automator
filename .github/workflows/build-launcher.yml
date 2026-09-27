@@ -52,8 +52,8 @@ jobs:
       - name: Install locked launcher and build dependencies
         run: uv sync --locked --no-dev --extra launcher --extra build
 
-      - name: Check launcher behavior
-        run: ../.venv/Scripts/python.exe -m unittest discover -s tests -p test_windows_launcher.py
+      - name: Check automator behavior
+        run: ../.venv/Scripts/python.exe -m unittest discover -s tests
 
       - name: Check GUI initialization without starting tasks
         env:

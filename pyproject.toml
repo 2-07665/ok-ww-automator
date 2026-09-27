@@ -1,6 +1,6 @@
 [project]
 name = "ok-ww-automator"
-version = "0.1.0"
+version = "0.3.0"
 description = "CLI automation helpers for Wuthering Waves daily routines"
 readme = "README.md"
 requires-python = "~=3.12.0"
@@ -27,6 +27,7 @@ build = [
 
 [project.scripts]
 ok-ww-automator-ok = "ok_ww_automator.ok_main:main"
+ok-ww-automator-doctor = "ok_ww_automator.doctor:main"
 
 [build-system]
 requires = ["setuptools>=69"]
@@ -36,4 +37,4 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-ok_ww_automator = ["notice_templates/*.html"]
+ok_ww_automator = ["notice_templates/*.html", "upstream_contracts.json"]

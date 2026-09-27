@@ -1,0 +1,857 @@
+{
+  "reviewed_on": "2026-09-27",
+  "upstreams": {
+    "ww": {
+      "url": "https://github.com/ok-oldking/ok-wuthering-waves.git",
+      "revision": "61bfa64b2f19eb646a5a3b00974b5b5760d887db"
+    },
+    "ok": {
+      "url": "https://github.com/ok-oldking/ok-script.git",
+      "revision": "d74ba2bff6ef07c120b193f99bd6497753d0f1be"
+    }
+  },
+  "checks": [
+    {
+      "id": "ok.OK.__init__",
+      "root": "ok",
+      "file": "ok/__init__.py",
+      "kind": "call",
+      "reason": "use_gui=False must initialize device_manager and task_executor without starting a GUI.",
+      "symbol": "OK.__init__",
+      "positional": 1,
+      "keywords": [],
+      "sha256": "1d12b89f26a0b4a9cee201c53c86e825bb484a25c2bfc7ffa2d4c5347c7bfeaf"
+    },
+    {
+      "id": "ok.OK.start",
+      "root": "ok",
+      "file": "ok/__init__.py",
+      "kind": "call",
+      "reason": "Manual GUI launch calls start() and relies on its event loop.",
+      "symbol": "OK.start",
+      "positional": 0,
+      "keywords": []
+    },
+    {
+      "id": "ok.OK.quit",
+      "root": "ok",
+      "file": "ok/__init__.py",
+      "kind": "call",
+      "reason": "Cleanup must stop workers without hanging child process teardown.",
+      "symbol": "OK.quit",
+      "positional": 0,
+      "keywords": [],
+      "sha256": "944bff4ec5db9a8f0d1d5e182e7498ab1e7f61872f22dbe591e48373d2ef44d0"
+    },
+    {
+      "id": "ok.HeadlessApp.tr",
+      "root": "ok",
+      "file": "ok/__init__.py",
+      "kind": "call",
+      "reason": "Headless error messages use the same translation as BaseTask.tr.",
+      "symbol": "HeadlessApp.tr",
+      "positional": 1,
+      "keywords": [],
+      "sha256": "91cd72a0ddd13238ccbaea4ca377fea168cd64bbd3e38ee9eb8a71dae3eea967"
+    },
+    {
+      "id": "ok.DeviceManager.do_refresh",
+      "root": "ok",
+      "file": "ok/device/DeviceManager.py",
+      "kind": "call",
+      "reason": "Readiness selects a connected device by imei; cleanup closes its window.",
+      "symbol": "DeviceManager.do_refresh",
+      "positional": 1,
+      "keywords": []
+    },
+    {
+      "id": "ok.DeviceManager.get_devices",
+      "root": "ok",
+      "file": "ok/device/DeviceManager.py",
+      "kind": "call",
+      "reason": "Readiness selects a connected device by imei; cleanup closes its window.",
+      "symbol": "DeviceManager.get_devices",
+      "positional": 0,
+      "keywords": [],
+      "sha256": "979c71f9aa03e7c5de3da3a1b24e721bbcb7883fea11dcfb77ca0fe8a4a57ef1"
+    },
+    {
+      "id": "ok.DeviceManager.get_preferred_device",
+      "root": "ok",
+      "file": "ok/device/DeviceManager.py",
+      "kind": "call",
+      "reason": "Readiness selects a connected device by imei; cleanup closes its window.",
+      "symbol": "DeviceManager.get_preferred_device",
+      "positional": 0,
+      "keywords": [],
+      "sha256": "c88bf1f897bd1d8936686dbeb440be0c86796bea5609fa8b6e35bbf4484fdf4a"
+    },
+    {
+      "id": "ok.DeviceManager.set_preferred_device",
+      "root": "ok",
+      "file": "ok/device/DeviceManager.py",
+      "kind": "call",
+      "reason": "Readiness selects a connected device by imei; cleanup closes its window.",
+      "symbol": "DeviceManager.set_preferred_device",
+      "positional": 1,
+      "keywords": []
+    },
+    {
+      "id": "ok.DeviceManager.stop_hwnd",
+      "root": "ok",
+      "file": "ok/device/DeviceManager.py",
+      "kind": "call",
+      "reason": "Readiness selects a connected device by imei; cleanup closes its window.",
+      "symbol": "DeviceManager.stop_hwnd",
+      "positional": 0,
+      "keywords": []
+    },
+    {
+      "id": "ok.BaseCaptureMethod.connected",
+      "root": "ok",
+      "file": "ok/device/capture_methods/base.py",
+      "kind": "call",
+      "reason": "Capture exposes connected() and get_frame(); nonempty arrays mean readiness.",
+      "symbol": "BaseCaptureMethod.connected",
+      "positional": 0,
+      "keywords": []
+    },
+    {
+      "id": "ok.BaseCaptureMethod.get_frame",
+      "root": "ok",
+      "file": "ok/device/capture_methods/base.py",
+      "kind": "call",
+      "reason": "Capture exposes connected() and get_frame(); nonempty arrays mean readiness.",
+      "symbol": "BaseCaptureMethod.get_frame",
+      "positional": 0,
+      "keywords": [],
+      "sha256": "4a2836005f50dedfcd2559865463710ae4001d40c83d264e225cfc3faa663a7a"
+    },
+    {
+      "id": "ok.TaskExecutor.start",
+      "root": "ok",
+      "file": "ok/task/TaskExecutor.py",
+      "kind": "call",
+      "reason": "One-time completion needs disabled task AND current_task is not this task; errors use translated Error and exit_event aborts waiting.",
+      "symbol": "TaskExecutor.start",
+      "positional": 0,
+      "keywords": [],
+      "sha256": "2f3488488593be7dbd885bc9c111cf0adb7055cdd8504f12ab21227bf4a5fdc0"
+    },
+    {
+      "id": "ok.TaskExecutor.get_task_by_class",
+      "root": "ok",
+      "file": "ok/task/TaskExecutor.py",
+      "kind": "call",
+      "reason": "One-time completion needs disabled task AND current_task is not this task; errors use translated Error and exit_event aborts waiting.",
+      "symbol": "TaskExecutor.get_task_by_class",
+      "positional": 1,
+      "keywords": [],
+      "sha256": "711175a4bfd0ffa55f0a218d8e1f90971dfe28479829c52c3eb4dfe9e7273508"
+    },
+    {
+      "id": "ok.TaskExecutor.execute",
+      "root": "ok",
+      "file": "ok/task/TaskExecutor.py",
+      "kind": "call",
+      "reason": "One-time completion needs disabled task AND current_task is not this task; errors use translated Error and exit_event aborts waiting.",
+      "symbol": "TaskExecutor.execute",
+      "positional": 0,
+      "keywords": [],
+      "sha256": "90d95b98989dadc73442b11c249fd34fee6d18ce5e27d1f5aefa45cd106063d3"
+    },
+    {
+      "id": "ok.TaskExecutor.__init__",
+      "root": "ok",
+      "file": "ok/task/TaskExecutor.py",
+      "kind": "literals",
+      "reason": "Review executor state initialization.",
+      "values": [
+        "locale"
+      ],
+      "symbol": "TaskExecutor.__init__",
+      "sha256": "fdfa908513fb03f157df2450ff25d7455f3fd5be27405a959988efa187e1c9aa"
+    },
+    {
+      "id": "ok.BaseTask.enable",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Task lifecycle, localized diagnostics and progress reporting depend on this method.",
+      "symbol": "BaseTask.enable",
+      "positional": 0,
+      "keywords": [],
+      "sha256": "7dcb1765b4d5c3f5a5941e08271065d302a116e7f026a325cbe8c2a17cd59eff"
+    },
+    {
+      "id": "ok.BaseTask.disable",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Task lifecycle, localized diagnostics and progress reporting depend on this method.",
+      "symbol": "BaseTask.disable",
+      "positional": 0,
+      "keywords": [],
+      "sha256": "1a5c2d304df4324a0cef8717f910d35af067a3e7319682d5646bb27eb94bf88a"
+    },
+    {
+      "id": "ok.BaseTask.unpause",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Task lifecycle, localized diagnostics and progress reporting depend on this method.",
+      "symbol": "BaseTask.unpause",
+      "positional": 0,
+      "keywords": [],
+      "sha256": "576405d0e3d3385ef5b912000c3df09c14ca0bc1284782e1456b24a9a3489e11"
+    },
+    {
+      "id": "ok.BaseTask.tr",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Task lifecycle, localized diagnostics and progress reporting depend on this method.",
+      "symbol": "BaseTask.tr",
+      "positional": 1,
+      "keywords": [],
+      "sha256": "563da41b6351a255cb0afb839b3903c9f52da75d6ae18f7e230ab6573eff699a"
+    },
+    {
+      "id": "ok.BaseTask.info_get",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Task lifecycle, localized diagnostics and progress reporting depend on this method.",
+      "symbol": "BaseTask.info_get",
+      "positional": 1,
+      "keywords": [],
+      "sha256": "0d8790ff4da488a905506178637903cbd85398339bb7ee4846a6457f8939c869"
+    },
+    {
+      "id": "ok.BaseTask.info_set",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Task lifecycle, localized diagnostics and progress reporting depend on this method.",
+      "symbol": "BaseTask.info_set",
+      "positional": 2,
+      "keywords": []
+    },
+    {
+      "id": "ok.BaseTask.info_incr",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Task lifecycle, localized diagnostics and progress reporting depend on this method.",
+      "symbol": "BaseTask.info_incr",
+      "positional": 1,
+      "keywords": []
+    },
+    {
+      "id": "ok.BaseTask.log_info",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Task lifecycle, localized diagnostics and progress reporting depend on this method.",
+      "symbol": "BaseTask.log_info",
+      "positional": 1,
+      "keywords": [],
+      "sha256": "8dcaf10888fc0e58107bf4df8d42e8e14d7fe2d27b3a69bcfd06f7259ea70cdf"
+    },
+    {
+      "id": "ok.ExecutorOperation.click",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Custom echo tasks use this input/OCR primitive; inspect forwarded **kwargs if its implementation changes.",
+      "symbol": "ExecutorOperation.click",
+      "positional": 0,
+      "keywords": []
+    },
+    {
+      "id": "ok.ExecutorOperation.click.2",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Custom echo tasks use this input/OCR primitive; inspect forwarded **kwargs if its implementation changes.",
+      "symbol": "ExecutorOperation.click",
+      "positional": 2,
+      "keywords": [
+        "after_sleep"
+      ]
+    },
+    {
+      "id": "ok.ExecutorOperation.click_relative",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Custom echo tasks use this input/OCR primitive; inspect forwarded **kwargs if its implementation changes.",
+      "symbol": "ExecutorOperation.click_relative",
+      "positional": 2,
+      "keywords": [
+        "after_sleep"
+      ]
+    },
+    {
+      "id": "ok.ExecutorOperation.send_key",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Custom echo tasks use this input/OCR primitive; inspect forwarded **kwargs if its implementation changes.",
+      "symbol": "ExecutorOperation.send_key",
+      "positional": 1,
+      "keywords": [
+        "after_sleep"
+      ]
+    },
+    {
+      "id": "ok.ExecutorOperation.mouse_down",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Custom echo tasks use this input/OCR primitive; inspect forwarded **kwargs if its implementation changes.",
+      "symbol": "ExecutorOperation.mouse_down",
+      "positional": 0,
+      "keywords": []
+    },
+    {
+      "id": "ok.ExecutorOperation.mouse_up",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Custom echo tasks use this input/OCR primitive; inspect forwarded **kwargs if its implementation changes.",
+      "symbol": "ExecutorOperation.mouse_up",
+      "positional": 0,
+      "keywords": []
+    },
+    {
+      "id": "ok.ExecutorOperation.sleep",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Custom echo tasks use this input/OCR primitive; inspect forwarded **kwargs if its implementation changes.",
+      "symbol": "ExecutorOperation.sleep",
+      "positional": 1,
+      "keywords": []
+    },
+    {
+      "id": "ok.ExecutorOperation.wait_until",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Custom tasks depend on returned condition values/OCR boxes, truthiness, and pre-click versus post-click failure behavior; review semantics before accepting an update.",
+      "symbol": "ExecutorOperation.wait_until",
+      "positional": 1,
+      "keywords": [
+        "time_out",
+        "raise_if_not_found",
+        "settle_time"
+      ],
+      "sha256": "35f086ef6a55fafd78741e7be2df16b6735c044ec47abd8d1cf1334758adb85e"
+    },
+    {
+      "id": "ok.ExecutorOperation.box_of_screen",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Custom echo tasks use this input/OCR primitive; inspect forwarded **kwargs if its implementation changes.",
+      "symbol": "ExecutorOperation.box_of_screen",
+      "positional": 4,
+      "keywords": []
+    },
+    {
+      "id": "ok.ExecutorOperation.height_of_screen",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Custom echo tasks use this input/OCR primitive; inspect forwarded **kwargs if its implementation changes.",
+      "symbol": "ExecutorOperation.height_of_screen",
+      "positional": 1,
+      "keywords": []
+    },
+    {
+      "id": "ok.ExecutorOperation.width_of_screen",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Custom echo tasks use this input/OCR primitive; inspect forwarded **kwargs if its implementation changes.",
+      "symbol": "ExecutorOperation.width_of_screen",
+      "positional": 1,
+      "keywords": []
+    },
+    {
+      "id": "ok.FindFeature.find_one",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Custom echo tasks use this input/OCR primitive; inspect forwarded **kwargs if its implementation changes.",
+      "symbol": "FindFeature.find_one",
+      "positional": 1,
+      "keywords": [
+        "frame"
+      ]
+    },
+    {
+      "id": "ok.OCR.ocr",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Custom tasks depend on returned condition values/OCR boxes, truthiness, and pre-click versus post-click failure behavior; review semantics before accepting an update.",
+      "symbol": "OCR.ocr",
+      "positional": 4,
+      "keywords": [
+        "match",
+        "frame"
+      ],
+      "sha256": "f2ee8893cd3508bd92984bedc4378f6719579cd24d3b229e1a4d45f63c06b393"
+    },
+    {
+      "id": "ok.OCR.wait_ocr",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Custom tasks depend on returned condition values/OCR boxes, truthiness, and pre-click versus post-click failure behavior; review semantics before accepting an update.",
+      "symbol": "OCR.wait_ocr",
+      "positional": 4,
+      "keywords": [
+        "match",
+        "time_out",
+        "raise_if_not_found",
+        "settle_time"
+      ],
+      "sha256": "510a3ad2b0da23a04eda8ca3cabfacfd3036fbf095be62ebd445c60cd49d08c8"
+    },
+    {
+      "id": "ok.OCR.wait_click_ocr",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "reason": "Custom tasks depend on returned condition values/OCR boxes, truthiness, and pre-click versus post-click failure behavior; review semantics before accepting an update.",
+      "symbol": "OCR.wait_click_ocr",
+      "positional": 4,
+      "keywords": [
+        "match",
+        "time_out",
+        "raise_if_not_found",
+        "settle_time",
+        "after_sleep"
+      ],
+      "sha256": "fc3f641b8109cea88fabc51175e94cf24a9df2dfe8c21f01184a6d1def9119dd"
+    },
+    {
+      "id": "ok.execute",
+      "root": "ok",
+      "file": "ok/util/process.py",
+      "kind": "call",
+      "reason": "Game launch passes the executable path as one argument.",
+      "symbol": "execute",
+      "positional": 1,
+      "keywords": []
+    },
+    {
+      "id": "ok.find_color_rectangles",
+      "root": "ok",
+      "file": "ok/util/color.py",
+      "kind": "call",
+      "reason": "FastFarmEcho detects the health bar using this geometry/color API.",
+      "symbol": "find_color_rectangles",
+      "positional": 4,
+      "keywords": [
+        "box"
+      ]
+    },
+    {
+      "id": "ok.Logger.get_logger",
+      "root": "ok",
+      "file": "ok/util/logger.py",
+      "kind": "call",
+      "reason": "Echo OCR imports the upstream logger.",
+      "symbol": "Logger.get_logger",
+      "positional": 1,
+      "keywords": []
+    },
+    {
+      "id": "ok.TaskDisabledException",
+      "root": "ok",
+      "file": "ok/task/exceptions.py",
+      "kind": "symbol",
+      "reason": "Cancellation must escape gameplay recovery paths.",
+      "symbol": "TaskDisabledException"
+    },
+    {
+      "id": "ok.lazy_exports",
+      "root": "ok",
+      "file": "ok/__init__.py",
+      "kind": "lazy_exports",
+      "reason": "These symbols must remain publicly exported by ok.",
+      "values": {
+        "TaskDisabledException": [
+          "ok.task.exceptions",
+          "TaskDisabledException"
+        ],
+        "find_color_rectangles": [
+          "ok.util.color",
+          "find_color_rectangles"
+        ]
+      },
+      "target": "_LAZY_IMPORTS"
+    },
+    {
+      "id": "ww.BaseWWTask.ensure_main",
+      "root": "ww",
+      "file": "src/task/BaseWWTask.py",
+      "kind": "call",
+      "reason": "Adapter assumes book navigation, stamina (current, backup, total) tuple with negative OCR sentinel, and cancellable input.",
+      "symbol": "BaseWWTask.ensure_main",
+      "positional": 0,
+      "keywords": [
+        "esc",
+        "time_out"
+      ]
+    },
+    {
+      "id": "ww.BaseWWTask.openF2Book",
+      "root": "ww",
+      "file": "src/task/BaseWWTask.py",
+      "kind": "call",
+      "reason": "Adapter assumes book navigation, stamina (current, backup, total) tuple with negative OCR sentinel, and cancellable input.",
+      "symbol": "BaseWWTask.openF2Book",
+      "positional": 1,
+      "keywords": [],
+      "sha256": "97d6f6a921f6a07927a97ce114569ba14699a391c711d459e9b0d0423e298666"
+    },
+    {
+      "id": "ww.BaseWWTask.get_stamina",
+      "root": "ww",
+      "file": "src/task/BaseWWTask.py",
+      "kind": "call",
+      "reason": "Adapter assumes book navigation, stamina (current, backup, total) tuple with negative OCR sentinel, and cancellable input.",
+      "symbol": "BaseWWTask.get_stamina",
+      "positional": 0,
+      "keywords": [],
+      "sha256": "f1d8264e17ea2e7e558db4503dc2a9f83d0197117b725ac67223dd82ef61296f"
+    },
+    {
+      "id": "ww.BaseWWTask.run_until",
+      "root": "ww",
+      "file": "src/task/BaseWWTask.py",
+      "kind": "call",
+      "reason": "Adapter assumes book navigation, stamina (current, backup, total) tuple with negative OCR sentinel, and cancellable input.",
+      "symbol": "BaseWWTask.run_until",
+      "positional": 2,
+      "keywords": [
+        "time_out",
+        "running"
+      ]
+    },
+    {
+      "id": "ww.BaseWWTask.jump",
+      "root": "ww",
+      "file": "src/task/BaseWWTask.py",
+      "kind": "call",
+      "reason": "Adapter assumes book navigation, stamina (current, backup, total) tuple with negative OCR sentinel, and cancellable input.",
+      "symbol": "BaseWWTask.jump",
+      "positional": 0,
+      "keywords": [
+        "after_sleep"
+      ]
+    },
+    {
+      "id": "ww.BaseWWTask.open_esc_menu",
+      "root": "ww",
+      "file": "src/task/BaseWWTask.py",
+      "kind": "call",
+      "reason": "Adapter assumes book navigation, stamina (current, backup, total) tuple with negative OCR sentinel, and cancellable input.",
+      "symbol": "BaseWWTask.open_esc_menu",
+      "positional": 0,
+      "keywords": []
+    },
+    {
+      "id": "ww.DailyTask.open_daily",
+      "root": "ww",
+      "file": "src/task/DailyTask.py",
+      "kind": "call",
+      "reason": "Daily points must be stored under total daily points; review changes to OCR and failure sentinels.",
+      "symbol": "DailyTask.open_daily",
+      "positional": 0,
+      "keywords": [],
+      "sha256": "9b36e9d3e66f495e5f9bd1d696abc21da9d9cbb55cbb361a6c1aefd574db7d42"
+    },
+    {
+      "id": "ww.DailyTask.__init__",
+      "root": "ww",
+      "file": "src/task/DailyTask.py",
+      "kind": "assignment",
+      "reason": "Farm selector indexes map Chinese Sheet values onto this exact order.",
+      "target": "self.support_tasks",
+      "value": [
+        "Tacet Suppression",
+        "Forgery Challenge",
+        "Simulation Challenge"
+      ],
+      "symbol": "DailyTask.__init__"
+    },
+    {
+      "id": "ww.DailyTask.__init__.2",
+      "root": "ww",
+      "file": "src/task/DailyTask.py",
+      "kind": "dict_keys",
+      "reason": "Automator writes these configuration keys.",
+      "values": [
+        "Which to Farm",
+        "Which Tacet Suppression to Farm",
+        "Which Forgery Challenge to Farm",
+        "Material Selection",
+        "Farm Nightmare Nest for Daily Echo"
+      ],
+      "symbol": "DailyTask.__init__",
+      "sha256": "570f99287c5f2de6722eba556dd5d8ff701f18545e2f4d402fee57066c689456"
+    },
+    {
+      "id": "ww.literals",
+      "root": "ww",
+      "file": "src/task/DailyTask.py",
+      "kind": "literals",
+      "reason": "Additional task configuration and the single tolerated battle-pass message are exact strings.",
+      "values": [
+        "Additional Tasks to Run After Daily Task",
+        "Auto Farm all Nightmare Nest",
+        "can not battle pass, maybe ended"
+      ]
+    },
+    {
+      "id": "ww.TacetTask.__init__",
+      "root": "ww",
+      "file": "src/task/TacetTask.py",
+      "kind": "dict_keys",
+      "reason": "Stamina-only task configuration must use supported keys.",
+      "values": [
+        "Which Tacet Suppression to Farm"
+      ],
+      "symbol": "TacetTask.__init__",
+      "sha256": "11646ddd9d8a9c7cd4d653753966c8ca560fdb3e34ecc93a0687f6a8cc2c19d8"
+    },
+    {
+      "id": "ww.ForgeryTask.__init__",
+      "root": "ww",
+      "file": "src/task/ForgeryTask.py",
+      "kind": "dict_keys",
+      "reason": "Stamina-only task configuration must use supported keys.",
+      "values": [
+        "Which Forgery Challenge to Farm"
+      ],
+      "symbol": "ForgeryTask.__init__",
+      "sha256": "70c7e3e21b94c8e7067c5a26b08307a0178bc688b8fb9c0fd9f5e2c0b1abfda8"
+    },
+    {
+      "id": "ww.SimulationTask.__init__",
+      "root": "ww",
+      "file": "src/task/SimulationTask.py",
+      "kind": "dict_keys",
+      "reason": "Stamina-only task configuration must use supported keys.",
+      "values": [
+        "Material Selection"
+      ],
+      "symbol": "SimulationTask.__init__",
+      "sha256": "addb5352be106246ecc69f60c5707dba2d2e038ac30b8e78b31e6c275d27ebc2"
+    },
+    {
+      "id": "ww.SimulationTask.__init__.2",
+      "root": "ww",
+      "file": "src/task/SimulationTask.py",
+      "kind": "literals",
+      "reason": "Chinese material names map to these upstream selection values.",
+      "values": [
+        "Resonator EXP",
+        "Weapon EXP",
+        "Shell Credit"
+      ],
+      "symbol": "SimulationTask.__init__"
+    },
+    {
+      "id": "ww.NightmareNestTask.__init__",
+      "root": "ww",
+      "file": "src/task/NightmareNestTask.py",
+      "kind": "literals",
+      "reason": "Daily echo options depend on this multi-selection contract.",
+      "values": [
+        "Which to Farm",
+        "Nightmare Purification",
+        "Tacet Discord Nest"
+      ],
+      "symbol": "NightmareNestTask.__init__",
+      "sha256": "9c51683f156ca4ec9309eab6efe506019592e75e8639a1559e2ad4517f501bd2"
+    },
+    {
+      "id": "ww.GardenTask.run",
+      "root": "ww",
+      "file": "src/task/GardenTask.py",
+      "kind": "literals",
+      "reason": "Weekly success uses this current-task Log message or an error-free finish; review completion semantics.",
+      "values": [
+        "乐园任务完成, 已达到上限"
+      ],
+      "symbol": "GardenTask.run",
+      "sha256": "a51236c1c76f01aeb66f812f180605b83d3161b6e0fa523da9f976cff4776880"
+    },
+    {
+      "id": "ww.registrations",
+      "root": "ww",
+      "file": "config.py",
+      "kind": "registrations",
+      "reason": "Scheduler retrieves all these tasks from the one-time registry.",
+      "values": [
+        [
+          "src.task.DailyTask",
+          "DailyTask"
+        ],
+        [
+          "src.task.NightmareNestTask",
+          "NightmareNestTask"
+        ],
+        [
+          "src.task.TacetTask",
+          "TacetTask"
+        ],
+        [
+          "src.task.ForgeryTask",
+          "ForgeryTask"
+        ],
+        [
+          "src.task.SimulationTask",
+          "SimulationTask"
+        ],
+        [
+          "src.task.GardenTask",
+          "GardenTask"
+        ]
+      ]
+    },
+    {
+      "id": "ww.literals.2",
+      "root": "ww",
+      "file": "config.py",
+      "kind": "literals",
+      "reason": "Process cleanup and custom UI boxes assume this game executable and screen ratio.",
+      "values": [
+        "Client-Win64-Shipping.exe",
+        "16:9"
+      ]
+    },
+    {
+      "id": "ww.BaseWWTask.__init__",
+      "root": "ww",
+      "file": "src/task/BaseWWTask.py",
+      "kind": "call",
+      "symbol": "BaseWWTask.__init__",
+      "positional": 0,
+      "keywords": [
+        "executor",
+        "app"
+      ],
+      "reason": "Custom tasks forward the task manager constructor keywords and depend on base task initialization.",
+      "sha256": "eb5f84fb55d290936156a5c44ed86d0884919f4fbc8a8fa6e0f717eab75afff8"
+    },
+    {
+      "id": "ok.ExecutorOperation.frame",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "symbol",
+      "symbol": "ExecutorOperation.frame",
+      "reason": "Custom tasks read self.frame as a property yielding the current image, not as a method or a cached unrelated value.",
+      "sha256": "13296dcb8690dcf0f0e168a8567bcae08043601f4ea724dfa76d69d1ae94949c"
+    },
+    {
+      "id": "ok.BaseTask.__init__",
+      "root": "ok",
+      "file": "ok/task/task.py",
+      "kind": "call",
+      "symbol": "BaseTask.__init__",
+      "positional": 0,
+      "keywords": [
+        "executor",
+        "app"
+      ],
+      "reason": "Custom tasks rely on initialized enabled/running/info/config fields and exit_after_task being caller-controlled.",
+      "sha256": "deb179b12a544150fec1b2fb66a8ce8673a7c0cd6536bad1c93578c72ff3ecc0"
+    },
+    {
+      "id": "ok.OK.do_init",
+      "root": "ok",
+      "file": "ok/__init__.py",
+      "kind": "call",
+      "symbol": "OK.do_init",
+      "positional": 0,
+      "keywords": [],
+      "reason": "Headless startup must initialize task registry/executor and capture without a GUI event loop.",
+      "sha256": "b9768f1dc503b93e0e833d869a3d941e34bcef604514fb5b13c209a65f0a2bd6"
+    },
+    {
+      "id": "ok.resolve_ui_config",
+      "root": "ok",
+      "file": "ok/core/ui_config.py",
+      "kind": "call",
+      "symbol": "resolve_ui_config",
+      "positional": 1,
+      "keywords": [],
+      "reason": "Headless config removes gui and sets use_gui=False; verify resolver continues to honor that combination.",
+      "sha256": "d58fad721432c510145d9f9164abf60a971492da5301850f9dc562ae979dc89d"
+    },
+    {
+      "id": "ww.DailyTask.get_total_daily_points",
+      "root": "ww",
+      "file": "src/task/DailyTask.py",
+      "kind": "call",
+      "symbol": "DailyTask.get_total_daily_points",
+      "positional": 0,
+      "keywords": [],
+      "reason": "open_daily delegates points OCR here; changed return/key/failure behavior affects whether daily reports success.",
+      "sha256": "d9854076f9cca8aa1f289aafad8ba3659ab8d08788b4ae9a2dd5e1ad9dfe2887"
+    },
+    {
+      "id": "ww.DailyTask.daily_points_key",
+      "root": "ww",
+      "file": "src/task/DailyTask.py",
+      "kind": "literals",
+      "symbol": "DailyTask.get_total_daily_points",
+      "values": [
+        "total daily points"
+      ],
+      "reason": "The adapter reads the total daily points info key populated by this method; OCR failure currently yields zero, never proof of success."
+    }
+  ],
+  "features": [
+    "gray_book_boss",
+    "boss_break_shield"
+  ],
+  "manual_checks": [
+    {
+      "id": "runtime.isolation",
+      "reason": "One OK runtime per attempt process; upstream globals/mutexes and cwd-relative assets prevent safe in-process account reuse. Verify startup, cancellation, timeout and native teardown on Windows."
+    },
+    {
+      "id": "game.capture",
+      "reason": "Verify connected device dictionaries expose imei/connected, real frames and interaction; registration/signature checks cannot prove live capture works."
+    },
+    {
+      "id": "game.ui",
+      "reason": "Verify 16:9 Chinese UI OCR regions, feature labels, echo stat tiers, merge confirmation and Cartethyia cooldowns after game updates. A merge with unknown submission status must never retry automatically."
+    },
+    {
+      "id": "game.progress",
+      "reason": "Check localized Error and Log keys, total daily points, Fight Count, and weekly completion in a current task; never treat historical logs or negative OCR as success."
+    },
+    {
+      "id": "services",
+      "reason": "Offline doctor does not call Google Sheets, Kuro/Waves, wxPusher, Mailgun or Healthchecks. Verify enabled integrations separately without exposing credentials; token/schema changes are independent of OK upstream."
+    },
+    {
+      "id": "scheduler.time",
+      "reason": "Stamina cap 240, backup cap 480, regeneration 6/12 minutes, daily hour UTC+8, weekly reset Monday 04:00 UTC+8. Windows triggers use host local time."
+    },
+    {
+      "id": "launcher.contract",
+      "reason": "Frozen launcher needs sibling .venv/Scripts/python.exe and source checkouts; its subprocess CLI and progress JSON must stay compatible. Rebuild after launcher/UI/progress/discovery contract changes."
+    }
+  ]
+}
