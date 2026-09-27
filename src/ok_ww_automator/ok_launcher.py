@@ -12,6 +12,7 @@ import time
 from typing import Any, Callable, Iterator, Protocol
 
 from .config import AppConfig
+from .farm_progress import FarmProgress
 
 
 class OkLaunchError(RuntimeError):
@@ -218,11 +219,14 @@ def run_onetime_task(
     poll_seconds: float = 10.0,
     sleep: Callable[[float], None] = time.sleep,
     monotonic: Callable[[], float] = time.monotonic,
+    on_poll: Callable[[], None] | None = None,
 ) -> str:
     task.enable()
     task.unpause()
     deadline = monotonic() + timeout_seconds
     while monotonic() < deadline:
+        if on_poll is not None:
+            on_poll()
         if executor.exit_event.is_set():
             raise OkLaunchError("Executor exit event set before task finished")
         if not task.enabled and executor.current_task is None:
@@ -255,7 +259,10 @@ def get_task_error(task: Any) -> str | None:
     return None
 
 
-def run_auto_farm(ww_root: Path, *, stop_at: float) -> None:
+def run_auto_farm(
+    ww_root: Path, *, stop_at: float,
+    on_progress: Callable[[FarmProgress], None] | None = None,
+) -> None:
     """Run fixed-position farming against the already open game until a monotonic deadline."""
     with ww_runtime_context(ww_root):
         from ok import OK
@@ -280,11 +287,26 @@ def run_auto_farm(ww_root: Path, *, stop_at: float) -> None:
 
             task = ok.task_executor.get_task_by_class(FastFarmEchoTask)
             task.stop_at = stop_at
+            started_at = time.monotonic()
+
+            def report_progress() -> None:
+                if on_progress is None:
+                    return
+                try:
+                    current = time.monotonic()
+                    on_progress(FarmProgress(
+                        "running", count=int(task.info_get("Fight Count") or 0),
+                        elapsed=current - started_at, remaining=max(0, stop_at - current),
+                    ))
+                except Exception:
+                    pass  # Statistics are optional and must never interrupt combat.
+
             ok.task_executor.start()
             try:
                 error = run_onetime_task(
                     ok.task_executor, task,
                     timeout_seconds=max(0, stop_at - time.monotonic()), poll_seconds=1,
+                    on_poll=report_progress,
                 )
             except TimeoutError:
                 task.disable()
@@ -293,7 +315,7 @@ def run_auto_farm(ww_root: Path, *, stop_at: float) -> None:
                     raise OkLaunchError(error)
                 if time.monotonic() < stop_at:
                     raise OkLaunchError("Auto Farm stopped before the scheduled end time.")
-            print(f"Auto Farm finished. Fight Count: {task.info_get('Fight Count')}", flush=True)
+            report_progress()
         finally:
             ok.quit()
 

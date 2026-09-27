@@ -16,8 +16,12 @@ foreach ($RequiredPath in @($PythonExe, $IconPath, $ManifestPath, $EntryPoint)) 
     }
 }
 
+$OriginalBuildPath = $env:PATH
 Push-Location $ProjectRoot
 try {
+    # PyInstaller searches PATH for DLLs. Other tools can supply an incompatible
+    # icuuc.dll (and CRT/OpenSSL DLLs) with the same names as Qt's dependencies.
+    $env:PATH = @((Split-Path $PythonExe), "$env:SystemRoot\System32", $env:SystemRoot) -join ';'
     if (Test-Path -LiteralPath $OutputPath -PathType Leaf) {
         Remove-Item -LiteralPath $OutputPath -Force
     }
@@ -42,6 +46,7 @@ try {
         throw "PyInstaller failed with exit code $($BuildProcess.ExitCode)"
     }
 } finally {
+    $env:PATH = $OriginalBuildPath
     Pop-Location
 }
 
