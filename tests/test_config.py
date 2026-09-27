@@ -16,6 +16,17 @@ from ok_ww_automator.config import (
 
 
 class ConfigTest(unittest.TestCase):
+    def test_weekly_run_days_parsing_and_validation(self):
+        for raw in (None, "", "  "):
+            env = {} if raw is None else {"WEEKLY_RUN_DAYS": raw}
+            self.assertEqual(load_config(env=env, project_root=self.tmp).weekly_run.run_days,
+                             (1, 2, 3, 4, 5, 6, 7))
+        config = load_config(env={"WEEKLY_RUN_DAYS": "5, 1,3,1"}, project_root=self.tmp)
+        self.assertEqual(config.weekly_run.run_days, (1, 3, 5))
+        for raw in ("0", "8", "1,8", "Monday", "1,,3", "1.5", ","):
+            with self.subTest(raw=raw), self.assertRaises(ConfigError):
+                load_config(env={"WEEKLY_RUN_DAYS": raw}, project_root=self.tmp)
+
     def test_weekly_notice_day_parsing_and_validation(self):
         with tempfile.TemporaryDirectory() as root:
             config = load_config(env={"WEEKLY_NOTICE_DAY": "5"}, project_root=Path(root))

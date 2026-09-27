@@ -27,7 +27,8 @@ The configuration module is designed to fail lazily. Secrets and credentials are
 | `GAME_EXE_PATH` | *unset* | Absolute path to `Wuthering Waves.exe`. |
 | `DAILY_HOUR` | `5` | Assumed daily task run hour (0-23, UTC+8). Used for stamina calculations. |
 | `DAILY_MINUTE` | `0` | Assumed daily task run minute (0-59). |
-| `WEEKLY_NOTICE_DAY` | `7` | Weekly failure notice day in Beijing time, 1=Monday through 7=Sunday. Notify if a run on/after this day still fails. |
+| `WEEKLY_RUN_DAYS` | `1,2,3,4,5,6,7` | Allowed Beijing calendar weekdays per account, e.g. `1,3,5`. Omitted/blank allows every day. Manual weekly runs ignore this filter. |
+| `WEEKLY_NOTICE_DAY` | `7` | Weekly failure notice day in Beijing time, 1=Monday through 7=Sunday. An invocation on/after this day notifies if the week is incomplete, including excluded run days. |
 | `GOOGLE_SHEET_ID` | *unset* | Target Google Spreadsheet ID. |
 | `GOOGLE_SERVICE_ACCOUNT_JSON_BASE64` | *unset* | Base64 encoded Service Account JSON credentials. |
 | `SHEET_NAME_CONFIG` | `Config` | Name of the configuration worksheet. |

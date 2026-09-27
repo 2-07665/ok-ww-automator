@@ -100,6 +100,12 @@ class WeeklyRunner:
                 result.decision = f"{week} 起的这一周已成功，跳过"
                 return result
 
+            if not self.run_now and current.isoweekday() not in self.config.weekly_run.run_days:
+                result.decision = "今天不在此账号的周常执行日内，跳过"
+                if current >= deadline:
+                    self._finish_failure(db, row, result)
+                return result
+
             error = self._attempt(start)
             if error is None:
                 db.execute("UPDATE weeks SET success = 1, error = NULL WHERE week = ?", (week,))

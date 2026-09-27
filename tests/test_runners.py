@@ -26,6 +26,39 @@ from ok_ww_automator.weekly import WeeklyRunner, week_start, weekly_notice_start
 
 
 class WeeklyRunnerTest(unittest.TestCase):
+    def test_run_days_are_per_account_and_manual_bypasses_them(self):
+        monday = replace(self.config, weekly_run=WeeklyRunConfig(run_days=(1,)))
+        tuesday = replace(monday, env_path=monday.env_path.with_name("us.env"),
+                          weekly_run=WeeklyRunConfig(run_days=(2,)))
+        self.game.run_weekly.return_value = WeeklyGameOutcome(completed=True)
+        self.assertEqual(self.run_at("2026-09-28T05:00", config=tuesday).status, "skipped")
+        self.game.run_weekly.assert_not_called()
+        self.prepare.assert_not_called()
+        self.assertEqual(self.run_at("2026-09-28T05:00", config=monday).status, "success")
+        self.assertEqual(self.run_at("2026-09-28T05:00", config=tuesday, run_now=True).status, "success")
+        self.assertEqual(self.run_at("2026-09-29T05:00", config=tuesday).status, "skipped")
+        self.assertEqual(self.game.run_weekly.call_count, 2)
+        self.wx.notify.assert_not_called()
+
+    def test_notice_on_excluded_day_without_launching_game(self):
+        config = replace(self.config, weekly_run=WeeklyRunConfig(notice_day=5, run_days=(1,)))
+        self.assertEqual(self.run_at("2026-09-30T05:00", config=config).status, "skipped")
+        self.wx.notify.assert_not_called()
+        self.assertEqual(self.run_at("2026-10-02T05:00", config=config).status, "failure")
+        self.run_at("2026-10-03T05:00", config=config)
+        self.wx.notify.assert_called_once()
+        self.prepare.assert_not_called()
+        self.game.run_weekly.assert_not_called()
+
+    def test_run_day_uses_beijing_calendar_day(self):
+        config = replace(self.config, weekly_run=WeeklyRunConfig(run_days=(2,)))
+        self.game.run_weekly.return_value = WeeklyGameOutcome(completed=True)
+        # Still Monday in UTC, already Tuesday in Beijing.
+        stamp = dt.datetime(2026, 9, 28, 16, tzinfo=dt.timezone.utc)
+        result = WeeklyRunner(config, self.game, clock=lambda: stamp).run()
+        self.assertEqual(result.status, "success")
+        self.game.run_weekly.assert_called_once()
+
     def test_total_budget_is_shared_by_preparation_retries_and_game_subprocesses(self):
         elapsed = 0.0
         stamp = dt.datetime(2026, 10, 2, 5, tzinfo=BEIJING_TZ)

@@ -27,7 +27,8 @@
 | `GAME_EXE_PATH` | *未设置* | `Wuthering Waves.exe` 的绝对路径。 |
 | `DAILY_HOUR` | `5` | 预期的日常任务运行小时 (0-23, UTC+8)。用于体力计算。 |
 | `DAILY_MINUTE` | `0` | 预期的日常任务运行分钟 (0-59)。 |
-| `WEEKLY_NOTICE_DAY` | `7` | 周常未成功的通知日（北京时间），1=周一至7=周日。当日或之后的任务触发仍失败时通知。 |
+| `WEEKLY_RUN_DAYS` | `1,2,3,4,5,6,7` | 每账号允许执行周常的北京时间自然日，1=周一至7=周日，例如 `1,3,5`；未设置或留空表示每天。手动周常忽略此限制。 |
+| `WEEKLY_NOTICE_DAY` | `7` | 周常未成功的通知日（北京时间），1=周一至7=周日。当日或之后触发时，本周未完成就通知，非执行日也检查。 |
 | `GOOGLE_SHEET_ID` | *未设置* | 目标 Google Spreadsheet ID。 |
 | `GOOGLE_SERVICE_ACCOUNT_JSON_BASE64` | *未设置* | Base64 编码的 Service Account JSON 凭据。 |
 | `SHEET_NAME_CONFIG` | `Config` | 配置工作表的名称。 |
@@ -54,4 +55,4 @@
 
 *(注意：布尔变量接受 `true`, `1`, `yes`, `on`, `是` 及其对应的否定值。)*
 
-周常以北京时间周一 04:00 划分周次；运行时间完全由 Windows 任务计划程序控制，env 只指定未完成的通知日。周常不使用 Sheets、Waves API 或 Healthchecks，只依赖游戏配置和本地成功记录。完整调度与失败通知规则见 [调度器](scheduler_zh.md#周常乐园)。
+周常以北京时间周一 04:00 划分周次；启动时刻由 Windows 任务计划程序控制，各账号 env 分别指定允许执行的星期和未完成的通知日。周常不使用 Sheets、Waves API 或 Healthchecks，只依赖游戏配置和本地成功记录。完整调度与失败通知规则见 [调度器](scheduler_zh.md#周常乐园)。

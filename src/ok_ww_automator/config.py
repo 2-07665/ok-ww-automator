@@ -33,6 +33,7 @@ class DailyRunTimeConfig:
 @dataclass(frozen=True)
 class WeeklyRunConfig:
     notice_day: int = 7  # ISO weekdays: Monday=1, Sunday=7
+    run_days: tuple[int, ...] = (1, 2, 3, 4, 5, 6, 7)
 
 
 @dataclass(frozen=True)
@@ -183,6 +184,7 @@ def load_config(
         ),
         weekly_run=WeeklyRunConfig(
             notice_day=_int_value(values, "WEEKLY_NOTICE_DAY", 7, minimum=1, maximum=7),
+            run_days=_weekly_run_days(values.get("WEEKLY_RUN_DAYS")),
         ),
         google_sheets=GoogleSheetsConfig(
             spreadsheet_id=_blank_to_none(values.get("GOOGLE_SHEET_ID")),
@@ -334,6 +336,18 @@ def _int_value(
     if value < minimum or value > maximum:
         raise ConfigError(f"{name} must be between {minimum} and {maximum}")
     return value
+
+
+def _weekly_run_days(raw: str | None) -> tuple[int, ...]:
+    if raw is None or not raw.strip():
+        return WeeklyRunConfig().run_days
+    try:
+        days = tuple(sorted({int(part.strip()) for part in raw.split(",")}))
+    except ValueError as exc:
+        raise ConfigError("WEEKLY_RUN_DAYS must be comma-separated weekdays from 1 to 7") from exc
+    if any(day < 1 or day > 7 for day in days):
+        raise ConfigError("WEEKLY_RUN_DAYS must contain only weekdays from 1 to 7")
+    return days
 
 
 def _float_value(
