@@ -1,23 +1,12 @@
-# 运行时配置
+# 账号配置
 
-`ok-ww-automator` 从进程环境加载运行时配置，并由可选的 `.env` 文件作为补充。如果两个地方都存在相同的变量，则以进程环境变量为准。
+[English](config.md) · [运行说明](operations_zh.md)
 
-## 环境文件解析
+从 `env/.env.example` 复制一个账号文件。调度器发现 `env/*.env`，排除示例；`.env` 的账号名为 `default`，其他文件去掉 `.env` 后即为账号名。进程环境变量优先于文件，因此避免在多账号任务的全局环境中设置账号专属凭据。
 
-默认情况下，应用程序会相对于项目根目录查找 `env/.env`。
-您可以通过设置 `ENV_FILE` 环境变量来覆盖此行为。如果仅提供文件名（例如，`ENV_FILE=cn.env`），它将解析为 `env/cn.env`。这使得 Windows 任务计划程序中的命令保持简洁。
+单独使用配置或 Sheets CLI 时，默认文件为 `env/.env`；`ENV_FILE=cn.env` 会解析为 `env/cn.env`。调度器通过 `--account cn` 选择配置。值保留中文，不展开 shell 变量。双引号内会解析 `\n`、`\r`、`\t` 等转义。Windows 路径请用单引号、不加引号或使用正斜杠，例如 `GAME_EXE_PATH='D:\new\tools\Game.exe'`。
 
-您可以将 `env/.env.example` 用作新账号的模板。
-
-## 集成开关与密钥
-
-配置模块被设计为延迟失败（fail lazily）。只有在实际执行可选功能时，才会验证相关的密钥和凭据。
-
-- **游戏执行**: 启动游戏适配器之前需要 `GAME_EXE_PATH`。
-- **Google Sheets**: 读取或追加数据到表格需要 `GOOGLE_SHEET_ID` 和 `GOOGLE_SERVICE_ACCOUNT_JSON_BASE64`。需要安装 `[sheets]` 额外依赖。
-- **Waves API**: 如果 `WAVES_API_ENABLED=true`，则需要 `WAVES_ROLE_ID`, `WAVES_TOKEN` 和 `WAVES_DID`。需要安装 `[waves]` 额外依赖。
-- **消息通知**: 如果 `NOTICE_ENABLED=true`，则需要特定于 `NOTICE_CHANNEL` 的密钥（如 `MAILGUN_API_KEY` 或 `WXPUSHER_SPT`）。需要安装 `[notice]` 额外依赖。
-- **Healthchecks.io**: 如果 `HEALTHCHECKS_ENABLED=true`，则需要 `HEALTHCHECKS_DAILY_UUID` 和 `HEALTHCHECKS_STAMINA_UUID`。
+日常/体力需要 Sheets 凭据，游戏尝试需要 `GAME_EXE_PATH`。周常仅需要游戏及可选 WxPusher 配置。Waves API、通知和 Healthchecks 启用时才需要其对应凭据；Healthchecks 需要日常和体力两个 UUID。
 
 ## 环境变量
 
@@ -34,12 +23,12 @@
 | `SHEET_NAME_CONFIG` | `Config` | 配置工作表的名称。 |
 | `SHEET_NAME_DAILY` | `DailyRuns` | 日常结果日志工作表的名称。 |
 | `SHEET_NAME_STAMINA` | `StaminaRuns` | 体力结果日志工作表的名称。 |
-| `SHEET_NAME_FASTFARM` | `5to1` | 快速刷取结果日志工作表的名称。 |
+| `SHEET_NAME_FASTFARM` | `5to1` | 旧版刷取结果写入接口的工作表；当前速刷/五合一不会自动写入。 |
 | `WAVES_API_ENABLED` | `false` | 启用库洛/Waves API 进行快速体力检查。 |
 | `WAVES_ROLE_ID` | *未设置* | Waves API 角色 ID。 |
 | `WAVES_TOKEN` | *未设置* | Waves API Token。 |
 | `WAVES_DID` | *未设置* | Waves API 设备 ID。 |
-| `RETRY_MAX_ATTEMPTS` | `2` | 失败前的最大游戏启动尝试次数。 |
+| `RETRY_MAX_ATTEMPTS` | `2` | 运行器最多尝试次数（至少 1）；周常另有最多 2 次及总时限。 |
 | `RETRY_DELAY_SECONDS` | `30` | 游戏启动重试之间的等待时间。 |
 | `NOTICE_ENABLED` | `false` | 启用运行后通知。 |
 | `NOTICE_CHANNEL` | *未设置* | 逗号分隔的通知渠道列表 (`mailgun`, `wxpusher`)。 |
@@ -53,6 +42,7 @@
 | `HEALTHCHECKS_DAILY_UUID` | *未设置* | 日常任务的 Healthchecks.io check UUID。 |
 | `HEALTHCHECKS_STAMINA_UUID` | *未设置* | 体力任务的 Healthchecks.io check UUID。 |
 
-*(注意：布尔变量接受 `true`, `1`, `yes`, `on`, `是` 及其对应的否定值。)*
 
-周常以北京时间周一 04:00 划分周次；启动时刻由 Windows 任务计划程序控制，各账号 env 分别指定允许执行的星期和未完成的通知日。周常不使用 Sheets、Waves API 或 Healthchecks，只依赖游戏配置和本地成功记录。完整调度与失败通知规则见 [调度器](scheduler_zh.md#周常乐园)。
+布尔值接受 `true/false`、`1/0`、`yes/no`、`on/off`、`是/否`，忽略英文大小写。
+
+`DAILY_HOUR`/`DAILY_MINUTE` 仅供北京时间体力预测；Windows 触发器使用系统本地时间。周常以北京时间周一 04:00 重置，执行日和通知日详见[运行说明](operations_zh.md#周常乐园)。

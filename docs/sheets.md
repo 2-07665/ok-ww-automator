@@ -1,18 +1,12 @@
-# Google Sheets Integration
+# Google Sheets
 
-The `src/ok_ww_automator/sheets.py` module manages the bidirectional sync of configuration and execution results with a Google Spreadsheet.
+[简体中文](sheets_zh.md) · [Configuration](config.md) · [Operations](operations.md)
 
-## Config Worksheet Layout
+Create a spreadsheet, share it with the service account as an editor, and set `GOOGLE_SHEET_ID` plus the Base64-encoded service-account JSON. The default worksheets are `Config`, `DailyRuns` and `StaminaRuns`; env variables can rename them. The app does not create worksheets or headers. Weekly and manual custom tasks do not require these sheets.
 
-The configuration worksheet uses a pairwise label-value layout to allow arbitrary placement of settings. Blank labels are ignored.
+## Config layout
 
-*Example Layout:*
-- Column A: Label, Column B: Value
-- Column C: Label, Column D: Value
-
-Labels must be strictly unique. This allows the system to not only parse the configuration but also locate the exact cell coordinates required to automatically clear `skip-once` flags after they are consumed.
-
-### Expected Labels
+Use adjacent label/value columns: A/B, C/D, and so on. Each row can hold multiple pairs. Blank labels are ignored; all nonempty labels must be unique. Booleans can use checkboxes or `TRUE`/`FALSE`. Missing/blank fields use defaults: daily and stamina enabled, skip and shutdown disabled, Tacet #1, simulation Shell Credit, full Nightmare farming disabled but both Nightmare target types selected.
 
 | Internal Field | Sheet Label | Expected Value Type |
 | --- | --- | --- |
@@ -36,19 +30,27 @@ Labels must be strictly unique. This allows the system to not only parse the con
 | `farm_tacet_discord_nest` | 残象聚落 | Boolean (defaults to `TRUE`) |
 | `farm_nightmare_purification` | 梦魇祓除 | Boolean (defaults to `TRUE`) |
 
-`刷声骸` is the master switch for full Nightmare Nest farming during the daily task. If it is enabled while
-both `残象聚落` and `梦魇祓除` are disabled, Nightmare farming is treated as disabled.
+Serial numbers start at 1 and follow the game's F2 list. Tacet names/sets and forgery name/weapon/version are descriptive fields; tasks select the numeric serial. Simulation material values are `共鸣者经验` (Resonator EXP), `武器经验` (Weapon EXP), or `贝币` (Shell Credit).
 
-## Result Logs
+`刷声骸` enables full Nightmare farming; selecting neither target disables it. With full farming off, upstream DailyTask may still farm one echo to meet daily goals. Disable both targets to disable that path as well.
 
-Run results are appended to their respective worksheets (`DailyRuns`, `StaminaRuns`, `5to1`). 
+After a skip-once flag is consumed, the app writes `FALSE` to the cell beside its label. Live stamina only appears in result logs; it is not written back to Config.
 
-The formats are strictly serialized by the data models (e.g., `RunResult.as_daily_row()`) to decouple the internal game state from the presentation in Google Sheets. Notably, **live game stamina is not written back to the Config worksheet**; it is only logged in the result rows.
+## Result columns
 
-## Live Verification
+You can add these headers to row 1; the app appends results in this order:
 
-You can test the parser and identify which cells the automator plans to target for updates:
+| Worksheet | Column order |
+| --- | --- |
+| `DailyRuns` | Start, end, duration, status, starting stamina, starting backup, consumed, remaining stamina, remaining backup, daily points, next-daily stamina, next-daily backup, sign-in result, full Nightmare farming, decision, error |
+| `StaminaRuns` | Start, end, duration, status, starting stamina, starting backup, consumed, remaining stamina, remaining backup, next-daily stamina, next-daily backup, decision, error |
+
+`5to1` and `SHEET_NAME_FASTFARM` remain for the legacy result-writing API. Launcher farming and five-to-one tasks currently do not append there, so normal setup does not need that worksheet.
+
+## Read-only check
+
+From the Automator directory, read the live sheet and print parsed settings and cell addresses without modifying it:
 
 ```powershell
-uv run --active python -m ok_ww_automator.sheets --env-file cn.env --show-cells
+../.venv/Scripts/python.exe -m ok_ww_automator.sheets --env-file cn.env --show-cells
 ```

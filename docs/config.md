@@ -1,25 +1,14 @@
-# Runtime Configuration
+# Account configuration
 
-`ok-ww-automator` loads runtime configuration from the process environment, supplemented by an optional `.env` file. If a variable exists in both, the process environment takes precedence.
+[简体中文](config_zh.md) · [Operations](operations.md)
 
-## Environment File Resolution
+Copy `env/.env.example` for each account. The scheduler discovers `env/*.env`, excluding the example. `.env` becomes account `default`; other filenames lose the `.env` suffix. Process environment variables override file values, so avoid globally setting account-specific credentials for multi-account jobs.
 
-By default, the application looks for `env/.env` relative to the project root. 
-You can override this by setting the `ENV_FILE` environment variable. Providing a bare filename (e.g., `ENV_FILE=cn.env`) will resolve to `env/cn.env`. This keeps the Windows Task Scheduler commands concise.
+Standalone configuration and Sheets CLI default to `env/.env`; `ENV_FILE=cn.env` resolves to `env/cn.env`. Select scheduler profiles with `--account cn`. Values preserve Unicode; shell variables are not expanded. Double-quoted values decode escapes such as `\n`, `\r` and `\t`. For Windows paths use single quotes, an unquoted value, or forward slashes (for example `GAME_EXE_PATH='D:\new\tools\Game.exe'`).
 
-Use `env/.env.example` as a template for new accounts.
+Daily/stamina require Sheets credentials, and game attempts require `GAME_EXE_PATH`. Weekly only needs the game and optional WxPusher configuration. Waves API, notifications and Healthchecks require their credentials when enabled; Healthchecks requires both daily and stamina UUIDs.
 
-## Integration Flags and Secrets
-
-The configuration module is designed to fail lazily. Secrets and credentials are only validated when an optional feature is actually executed.
-
-- **Game Execution**: `GAME_EXE_PATH` is required before launching the game adapter.
-- **Google Sheets**: `GOOGLE_SHEET_ID` and `GOOGLE_SERVICE_ACCOUNT_JSON_BASE64` are required to read or append to sheets. Requires the `[sheets]` install extra.
-- **Waves API**: `WAVES_ROLE_ID`, `WAVES_TOKEN`, and `WAVES_DID` are required if `WAVES_API_ENABLED=true`. Requires the `[waves]` install extra.
-- **Notices**: `NOTICE_CHANNEL` specific secrets (like `MAILGUN_API_KEY` or `WXPUSHER_SPT`) are required if `NOTICE_ENABLED=true`. Requires the `[notice]` install extra.
-- **Healthchecks.io**: `HEALTHCHECKS_DAILY_UUID` and `HEALTHCHECKS_STAMINA_UUID` are required if `HEALTHCHECKS_ENABLED=true`.
-
-## Environment Variables
+## Environment variables
 
 | Variable | Default | Description |
 | --- | --- | --- |
@@ -34,12 +23,12 @@ The configuration module is designed to fail lazily. Secrets and credentials are
 | `SHEET_NAME_CONFIG` | `Config` | Name of the configuration worksheet. |
 | `SHEET_NAME_DAILY` | `DailyRuns` | Name of the daily results log worksheet. |
 | `SHEET_NAME_STAMINA` | `StaminaRuns` | Name of the stamina results log worksheet. |
-| `SHEET_NAME_FASTFARM` | `5to1` | Name of the fast-farm results log worksheet. |
+| `SHEET_NAME_FASTFARM` | `5to1` | Legacy farming-result writer worksheet; current farm/merge tasks do not append automatically. |
 | `WAVES_API_ENABLED` | `false` | Enable Kuro/Waves API for fast stamina checks. |
 | `WAVES_ROLE_ID` | *unset* | Waves API role ID. |
 | `WAVES_TOKEN` | *unset* | Waves API token. |
 | `WAVES_DID` | *unset* | Waves API device ID. |
-| `RETRY_MAX_ATTEMPTS` | `2` | Maximum game launch attempts before failing. |
+| `RETRY_MAX_ATTEMPTS` | `2` | Runner attempt limit (at least 1); weekly additionally caps at 2 attempts and a total budget. |
 | `RETRY_DELAY_SECONDS` | `30` | Wait time between game launch retries. |
 | `NOTICE_ENABLED` | `false` | Enable post-run notifications. |
 | `NOTICE_CHANNEL` | *unset* | Comma-separated list of channels (`mailgun`, `wxpusher`). |
@@ -53,4 +42,7 @@ The configuration module is designed to fail lazily. Secrets and credentials are
 | `HEALTHCHECKS_DAILY_UUID` | *unset* | Healthchecks.io check UUID for the daily task. |
 | `HEALTHCHECKS_STAMINA_UUID` | *unset* | Healthchecks.io check UUID for the stamina task. |
 
-*(Note: Boolean variables accept `true`, `1`, `yes`, `on`, `是` and their negative counterparts.)*
+
+Booleans accept `true/false`, `1/0`, `yes/no`, `on/off`, `是/否`, with case-insensitive English values.
+
+`DAILY_HOUR`/`DAILY_MINUTE` only set the Beijing-time prediction target; Windows triggers use system-local time. Weeks reset Monday 04:00 Beijing time. See [weekly operations](operations.md#weekly-garden) for run-day and notice-day behavior.

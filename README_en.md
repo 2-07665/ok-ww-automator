@@ -2,104 +2,58 @@
 
 English | [简体中文](README.md)
 
-CLI automation helpers for Wuthering Waves daily routines, with additional injectable custom OK tasks, built on top of [ok-script](https://github.com/ok-script/ok-script) and [ok-wuthering-waves](https://github.com/ok-script/ok-wuthering-waves).
+Run Wuthering Waves daily, stamina and weekly Garden tasks through [OK-WW](https://github.com/ok-oldking/ok-wuthering-waves). Each account has an env profile; daily and stamina settings come from Google Sheets. A Windows launcher also exposes fixed-position echo farming and the upstream OK interface with extra tasks.
 
-The automation workflow provides remote configuration via Google Sheets, multi-account isolation, precise stamina burn calculations, and robust failure notifications. In addition, this project provides a separate set of custom OK tasks that can be injected into the regular OK GUI.
+## Install
 
-## Features
-
-- **Weekly Garden**: Run Garden through Windows Task Scheduler, skip scheduled runs after weekly success, and notify via wxPusher if still unsuccessful on/after the env-configured notice day. Also available from the launcher. See [weekly scheduling](docs/scheduler.md#weekly-garden).
-- **Decoupled Orchestration**: Separates scheduling, retry logic, and stamina calculation from the low-level game interaction.
-- **Injectable Custom Tasks**: Provides a separate set of extra OK tasks, independent from the automation workflow, that can be injected into the regular OK GUI.
-- **Remote Configuration**: Reads task settings from a Google Sheet, allowing you to update your daily routines without touching the host machine.
-- **Multi-Account Support**: Discovers environment files in the `env/` directory and isolates each account run in its own Python subprocess.
-- **Smart Stamina Management**: Predicts stamina overflow using the Waves API (or OCR fallback) to only launch the game when necessary.
-- **Notices**: Sends detailed execution logs via Mailgun or WxPusher.
-
-## Setup Guide
-
-### 1. Environment and Dependencies
-
-Use a single parent virtual environment for both `ok-ww-automator` and `ok-wuthering-waves`. From the parent directory of both projects:
-
-```powershell
-uv venv .venv
-.\.venv\Scripts\Activate.ps1
-
-# Install automator with all optional integrations
-cd .\ok-ww-automator
-uv pip install -e ".[sheets,waves,notice]"
-
-# Install upstream game dependencies
-cd ..\ok-wuthering-waves
-uv pip install -r requirements.txt
-```
-
-### 2. Configuration
-
-Copy the example environment file to create your default account configuration:
-
-```powershell
-cd D:\dev\game\ok-ww\ok-ww-automator
-cp env\.env.example env\.env
-```
-
-Open `env\.env` and fill in the required variables:
-- `GAME_EXE_PATH`: Path to `Wuthering Waves.exe`.
-- `GOOGLE_SHEET_ID`: Your Google Spreadsheet ID.
-- `GOOGLE_SERVICE_ACCOUNT_JSON_BASE64`: Base64 encoded Google Service Account JSON.
-- Waves API and Notice configurations (optional).
-
-*Note: You can create multiple files (e.g., `cn.env`, `global.env`) in the `env/` directory for multi-account scheduling.*
-
-### 3. Google Sheets Setup
-
-Create a Google Spreadsheet with the following worksheets:
-- `Config`: Pairwise label/value configuration (see `docs/sheets.md` for exact labels).
-- `DailyRuns`: Log for daily task results.
-- `StaminaRuns`: Log for stamina burn results.
-- `5to1`: Log for echo fast-farm results.
-
-### 4. Windows Task Scheduler
-
-XML presets are provided to easily import the automated tasks into Windows Task Scheduler.
-
-1. Open **Task Scheduler**.
-2. Click **Import Task...** in the Actions pane.
-3. Import `windows/daily_task.xml` and `windows/stamina_task.xml`.
-4. **Important**: Edit the imported tasks. Under the **Actions** tab, verify the **Command** (path to `.venv\Scripts\python.exe`) and **Working Directory** match your local environment.
-
-## Manual Usage
-
-To launch the normal OK GUI with the extra automator tasks injected:
-
-```powershell
-uv run --active python -m ok_ww_automator.ok_main
-```
-
-To run the scheduler manually (dry-run):
-
-```powershell
-uv run --active python -m ok_ww_automator.scheduler --mode daily --dry-run
-```
-
-## Elevated Windows Launcher
-
-The optional one-file `OK Automator Launcher` provides the regular OK GUI action, direct game launching for one selected account, and ordered multi-account Daily/Stamina runs with embedded logs and process-tree stopping. **Launch Game** is enabled only when exactly one account is selected; it reads that profile's `GAME_EXE_PATH` and starts it directly. It does not detect, close, or manage existing or newly launched game processes, and the button has a three-second cooldown to prevent accidental repeated launches. Multi-selection remains available for scheduler runs. Download `OKAutomatorLauncher.exe` directly from [Releases](https://github.com/2-07665/ok-ww-automator/releases) without building locally. Push a version tag starting with `v` when a new release is needed; CI builds the launcher and creates the release automatically. Ordinary code pushes do not trigger a build.
-
-For a local build, first prepare the shared Python 3.12 environment and sibling upstream checkout following the installation guide, then run from `ok-ww-automator`:
-
-```powershell
-uv pip install --python ..\.venv\Scripts\python.exe -e ".[launcher,build]"
-powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\build_launcher.ps1
-```
-
-The build uses the existing upstream OK icon and produces:
+Use Windows and Python 3.12, with the game already configured in OK-WW. Keep the checkouts and one shared virtual environment together:
 
 ```text
-dist\OKAutomatorLauncher.exe
+workspace/
+  .venv/Scripts/python.exe
+  ok-ww-automator/
+  ok-wuthering-waves/
+  ok-script/                  # optional source checkout for maintenance
 ```
 
-Keep the executable in `ok-ww-automator\dist`, or copy it to the `ok-ww-automator` root. The sibling `..\.venv\Scripts\python.exe` and `..\ok-wuthering-waves` checkout must remain available at runtime. Windows requests administrator privileges through UAC whenever the executable starts.
+From the workspace directory, with both projects cloned:
 
-Ordinary Automator or upstream source updates do not require rebuilding the launcher. Rebuild only after launcher features or its documented external contracts change. See [the Windows launcher guide](docs/windows-launcher.md) for behavior and compatibility details.
+```powershell
+uv venv --python 3.12 .venv
+uv pip install --python .venv/Scripts/python.exe -e "./ok-ww-automator[sheets,waves,notice,launcher]"
+uv pip install --python .venv/Scripts/python.exe -r ./ok-wuthering-waves/requirements.txt
+cd ok-ww-automator
+Copy-Item env/.env.example env/cn.env
+```
+
+Edit `env/cn.env`: set `GAME_EXE_PATH` and, for daily/stamina jobs, the Google Sheets credentials. Share the spreadsheet with the service account as an editor and create `Config`, `DailyRuns` and `StaminaRuns`. Fill the [Config labels](docs/sheets.md); env secrets and optional integrations are listed in [configuration](docs/config.md).
+
+Additional `env/*.env` files become separate accounts. `cn.env` means account `cn`; `.env` means `default`. Profiles select executables and credentials; they do not implement account switching inside a shared game installation.
+
+## Run
+
+From `ok-ww-automator`, inspect account selection and update commands first:
+
+```powershell
+../.venv/Scripts/python.exe -m ok_ww_automator.scheduler --mode daily --dry-run
+../.venv/Scripts/python.exe -m ok_ww_automator.scheduler --mode daily --account cn
+```
+
+`--dry-run` prints a plan without validating credentials or contacting services. Live scheduled jobs normally update OK-WW with a fast-forward merge and install its requirements into the current interpreter. Use `--skip-update` to retain the installed version. Game attempts restart the game and run in isolated processes.
+
+| Action | Command after `../.venv/Scripts/python.exe -m` |
+| --- | --- |
+| Daily tasks | `ok_ww_automator.scheduler --mode daily` |
+| Extra stamina run | `ok_ww_automator.scheduler --mode stamina` |
+| Weekly Garden, respecting weekly state | `ok_ww_automator.scheduler --mode weekly` |
+| All stamina jobs, then unfinished weekly jobs | `ok_ww_automator.scheduler --mode stamina-weekly` |
+| OK interface with extra tasks | `ok_ww_automator.ok_main` |
+| Farm the already-open game, then shut down at local 03:00 | `ok_ww_automator.auto_farm --stop-time 03:00` |
+
+Use repeated `--account cn --account global` options to select and order accounts. Schedule commands using the XML templates under `windows/`, after editing their paths, logged-in user and trigger times. See [operations](docs/operations.md) for weekly rules, shutdown, timezones and custom-task prerequisites.
+
+## Desktop launcher and maintenance
+
+Download `OKAutomatorLauncher.exe` from [Releases](https://github.com/2-07665/ok-ww-automator/releases) and place it in the Automator root or `dist/`. It requests administrator rights and uses the shared Python environment above. Its pages cover farming, daily/stamina/weekly jobs, OK tools and local logs. Direct game launch requires exactly one selected profile.
+
+Before accepting an upstream update, run the [doctor and compatibility workflow](docs/maintenance.md). That guide also covers tests, the Codex update skill, local launcher builds and tagged releases. For activated environments, use `uv run --active`; plain `uv run` can create an unintended project-local `.venv`.
