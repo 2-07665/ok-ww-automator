@@ -1,6 +1,5 @@
 import time
 
-from qfluentwidgets import FluentIcon
 from ok import find_color_rectangles
 from src.task.BaseWWTask import BaseWWTask
 
@@ -19,8 +18,6 @@ class FastFarmEchoTask(BaseWWTask):
         self.description = "小卡单人速刷位置固定的4C"
         self.name = "固定4C速刷"
         self.group_name = "My"
-        self.group_icon = FluentIcon.SYNC
-        self.icon = FluentIcon.ALBUM
         self.default_config = {"刷多少次": 2000}
         self._fixed_char = Cartethyia(self)
         self._in_combat = False

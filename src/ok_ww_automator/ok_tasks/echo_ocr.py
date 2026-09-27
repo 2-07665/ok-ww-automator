@@ -4,7 +4,6 @@ import json
 import re
 import socket
 
-from qfluentwidgets import FluentIcon
 from ok import Logger, TaskDisabledException
 from src.task.BaseWWTask import BaseWWTask
 
@@ -20,7 +19,6 @@ class EchoOCRTask(BaseWWTask):
         self.name = "Echo OCR"
         self.description = "OCR识别声骸副词条"
         self.group_name = "My"
-        self.icon = FluentIcon.ALBUM
         self.default_config = {"识别间隔(s)": 2.0, "端口": 9999}
         self._is_echo_page = False
         self._is_echo_upgrade_page = False
