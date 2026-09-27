@@ -16,6 +16,8 @@ Windows triggers use system-local time. Stamina predictions use `DAILY_HOUR`/`DA
 
 Daily reads the sheet, consumes a skip-once flag if requested, optionally performs community sign-in through Waves API, and executes upstream DailyTask. It then reads live stamina and daily points, writes a result and sends configured notices. An ended battle pass is treated as optional work; other task errors remain visible.
 
+Daily succeeds when the live points total is at least 100 and there is no task error. Totals can exceed 100 (for example, 130 or 140) and are reported as measured. Missing readings, totals below 100, or task errors require review.
+
 Stamina checks Waves API first, falling back to a separate game/OCR attempt if unavailable. It predicts regeneration until the next daily run and skips farming if no burn is needed. Planning assumes a 240 current / 480 backup cap, one current point per six minutes and one backup point per twelve minutes after current stamina fills. Tacet costs 60; forgery/simulation costs 40. These are estimates, and upstream farming controls the actual amount consumed.
 
 If a Config read fails, current behavior uses default settings and records the read error in the decision text. Defaults enable daily/stamina, select Tacet #1 and disable shutdown. Missing credentials still prevent construction of the Sheets client. Result-log or notification delivery failures are recorded where possible; check the local output if the remote log is unavailable.

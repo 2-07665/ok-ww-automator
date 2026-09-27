@@ -437,7 +437,8 @@ def read_live_daily_points(task, *, retries: int = 3, retry_sleep: float = 10.0)
             task.ensure_main(esc=True, time_out=20)
             task.open_daily()
             points = coerce_int(task.info_get("total daily points"))
-            if points is not None and 0 <= points <= 100:
+            # Upstream reports accumulated points: 100 is the completion threshold, not a cap.
+            if points is not None and points >= 0:
                 return points
         except Exception:
             pass

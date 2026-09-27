@@ -805,7 +805,7 @@
       "symbol": "DailyTask.get_total_daily_points",
       "positional": 0,
       "keywords": [],
-      "reason": "open_daily delegates points OCR here; changed return/key/failure behavior affects whether daily reports success.",
+      "reason": "open_daily delegates points OCR here; nonnegative totals may exceed 100, which is the completion threshold, not a cap. Preserve the raw total; changed return/key/failure behavior affects whether daily reports success.",
       "sha256": "d9854076f9cca8aa1f289aafad8ba3659ab8d08788b4ae9a2dd5e1ad9dfe2887"
     },
     {

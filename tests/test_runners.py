@@ -22,6 +22,7 @@ from ok_ww_automator.game_clients import (
     DailyGameOutcome,
     StaminaGameOutcome,
     WeeklyGameOutcome,
+    read_live_daily_points,
 )
 from ok_ww_automator.time_utils import BEIJING_TZ
 from ok_ww_automator.waves_api import WavesDailyInfo
@@ -414,6 +415,41 @@ class FakeHealthcheckMonitor:
 
 
 class DailyRunnerTest(unittest.TestCase):
+    def test_live_daily_points_drive_status_and_preserve_reported_total(self):
+        cases = [
+            (100, None, "success"),
+            (130, None, "success"),
+            (140, None, "success"),
+            (0, None, "needs review"),
+            (99, None, "needs review"),
+            (None, None, "needs review"),
+            (140, "DailyTask: bad", "needs review"),
+        ]
+        for reading, error, status in cases:
+            with self.subTest(reading=reading, error=error):
+                task = Mock()
+                task.info_get.return_value = reading
+                game = FakeGameClient(DailyGameOutcome(
+                    daily_points=read_live_daily_points(task, retry_sleep=0),
+                    task_error=error,
+                ))
+                store = FakeStore()
+                notice = FakeNoticeClient()
+                result = DailyRunner(
+                    store=store, game_client=game, notice_client=notice,
+                    retry_config=RetryConfig(1, 0),
+                ).run()
+                self.assertEqual(result.status, status)
+                self.assertEqual(result.daily_points, reading)
+                self.assertEqual(result.error, error)
+                self.assertEqual(store.daily_results, [result])
+                self.assertEqual(notice.calls, [(result, store.sheet_config)])
+                self.assertEqual(store.daily_results[0].as_daily_row()[9],
+                                 "" if reading is None else str(reading))
+                if reading is not None:
+                    message = build_notice_message(*notice.calls[0])
+                    self.assertIn(f"活跃度: {reading}", message.text)
+
     def test_account_daily_target_reaches_both_sheet_and_notice_predictions(self):
         stamp = dt.datetime(2026, 5, 16, 3, 0, tzinfo=BEIJING_TZ)
         app_config = AppConfig(Path("/project"), Path("/project/env/cn.env"),

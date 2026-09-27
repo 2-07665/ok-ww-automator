@@ -250,16 +250,17 @@ class GameClientsTest(unittest.TestCase):
         self.assertIsNone(read_live_daily_points(task, retries=2, retry_sleep=0))
 
     def test_daily_points_do_not_treat_missing_or_invalid_readings_as_zero(self):
-        task = FakeDailyPointsTask([None, -1, 200])
+        task = FakeDailyPointsTask([None, -1, "bad"])
         self.assertIsNone(read_live_daily_points(task, retries=3, retry_sleep=0))
 
     def test_read_live_daily_points_returns_first_reading(self) -> None:
-        task = FakeDailyPointsTask([0, 100])
-
-        points = read_live_daily_points(task, retries=3, retry_sleep=0)
-
-        self.assertEqual(points, 0)
-        self.assertEqual(task.open_count, 1)
+        # Upstream returns accumulated points; 100 is a completion threshold, not a cap.
+        for reading in (0, 100, 130, 140, "140", 200):
+            with self.subTest(reading=reading):
+                task = FakeDailyPointsTask([reading, 100])
+                points = read_live_daily_points(task, retries=3, retry_sleep=0)
+                self.assertEqual(points, int(reading))
+                self.assertEqual(task.open_count, 1)
 
     def test_read_live_daily_points_retries_until_first_valid_reading(self) -> None:
         task = FakeDailyPointsTask(["bad", 80, 100])
