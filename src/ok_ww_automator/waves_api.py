@@ -112,9 +112,12 @@ class WavesApiClient:
 def is_api_success(response: dict[str, Any] | None) -> bool:
     if not isinstance(response, dict):
         return False
+    if response.get("success") is False:
+        return False
     if response.get("success") is True:
         return True
-    return response.get("code") in (0, 200, 1511)
+    code = response.get("code")
+    return type(code) is int and code in (0, 200, 1511)
 
 
 def extract_daily_info(response: dict[str, Any]) -> WavesDailyInfo | None:
@@ -138,6 +141,9 @@ def extract_daily_info(response: dict[str, Any]) -> WavesDailyInfo | None:
 
 
 def parse_response(response: Any) -> dict[str, Any]:
+    status = getattr(response, "status_code", 200)
+    if not 200 <= status < 300:
+        return {"code": WAVES_CODE_TRANSPORT_ERROR, "msg": f"HTTP {status}", "data": None}
     try:
         raw_data = response.json()
     except ValueError:
@@ -148,7 +154,7 @@ def parse_response(response: Any) -> dict[str, Any]:
         if isinstance(data, str):
             try:
                 raw_data["data"] = json.loads(data)
-            except Exception:
+            except ValueError:
                 pass
         return raw_data
     return {"code": WAVES_CODE_TRANSPORT_ERROR, "msg": "unexpected response", "data": raw_data}

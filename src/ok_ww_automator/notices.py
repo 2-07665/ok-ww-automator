@@ -114,7 +114,7 @@ class WxPusherNoticeClient:
         )
         response.raise_for_status()
         body = response.json()
-        if body.get("code") != 1000:
+        if not isinstance(body, Mapping) or body.get("code") != 1000:
             raise NoticeError(f"WxPusher send failed: {body}")
 
 

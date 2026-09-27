@@ -2,13 +2,16 @@ import datetime as dt
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from ok_ww_automator.config import NoticeConfig
 from ok_ww_automator.models import RunResult, SheetRunConfig
 from ok_ww_automator.notices import (
+    CompositeNoticeClient,
     MailgunNoticeClient,
+    NoticeError,
     WxPusherNoticeClient,
     build_notice_message,
     should_notify,
@@ -117,6 +120,25 @@ class NoticesTest(unittest.TestCase):
         self.assertEqual(url, "https://wxpusher.zjiecode.com/api/send/message/simple-push")
         self.assertEqual(kwargs["json"]["spt"], "spt")
         self.assertEqual(kwargs["json"]["contentType"], 2)
+
+    def test_notice_channels_continue_after_failure_and_report_errors(self) -> None:
+        first = Mock()
+        first.notify.side_effect = RuntimeError("mail unavailable")
+        second = Mock()
+        base = dt.datetime(2026, 5, 16, 5, 0, tzinfo=BEIJING_TZ)
+        result = RunResult("daily", base, base, "failure")
+        config = SheetRunConfig()
+        with self.assertRaisesRegex(NoticeError, "mail unavailable"):
+            CompositeNoticeClient([first, second]).notify(result, config)
+        second.notify.assert_called_once_with(result, config)
+
+    def test_wxpusher_rejects_malformed_or_unsuccessful_responses(self) -> None:
+        config = NoticeConfig(enabled=True, channels=("wxpusher",), wxpusher_spt="spt")
+        base = dt.datetime(2026, 5, 16, 5, 0, tzinfo=BEIJING_TZ)
+        result = RunResult("stamina", base, base, "failure")
+        for body in (["unexpected"], {"code": 1001, "msg": "invalid token"}):
+            with self.subTest(body=body), self.assertRaises(NoticeError):
+                WxPusherNoticeClient(config, session=FakeSession(FakeResponse(body))).notify(result, SheetRunConfig())
 
 
 if __name__ == "__main__":

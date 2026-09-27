@@ -13,7 +13,7 @@ def run_with_timeout(command, *, timeout: float, **kwargs) -> subprocess.Complet
     process = subprocess.Popen(command, start_new_session=os.name != "nt", **kwargs)
     try:
         returncode = process.wait(timeout=timeout)
-    except BaseException:
+    except BaseException as exc:
         # Kill descendants while the parent still exists, including OK/game or
         # dependency-install children. Killing only Python leaves those running.
         try:
@@ -25,9 +25,13 @@ def run_with_timeout(command, *, timeout: float, **kwargs) -> subprocess.Complet
                 )
             else:
                 os.killpg(process.pid, signal.SIGKILL)
-        finally:
+        except Exception as cleanup_error:
+            exc.add_note(f"Unable to terminate the process tree: {cleanup_error}")
+        try:
             if process.poll() is None:
                 process.kill()
             process.wait(timeout=5)
+        except Exception as cleanup_error:
+            exc.add_note(f"Unable to reap the child process: {cleanup_error}")
         raise
     return subprocess.CompletedProcess(command, returncode)

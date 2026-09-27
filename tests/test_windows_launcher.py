@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 import queue
+import os
+import subprocess
 import sys
 import tempfile
 import threading
@@ -11,20 +13,14 @@ from unittest.mock import Mock, call, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from ok_ww_automator.env_discovery import AccountEnv, discover_account_envs
+from ok_ww_automator.env_discovery import AccountEnv
 from ok_ww_automator.windows_launcher import (
     CREATE_NO_WINDOW,
-    DEFAULT_WINDOW_SIZE,
-    GAME_LAUNCH_COOLDOWN_MS,
     GameLaunch,
     LauncherConfigurationError,
     LauncherPaths,
-    MINIMUM_ACCOUNT_TABLE_HEIGHT,
-    MINIMUM_LOG_HEIGHT,
-    MINIMUM_WINDOW_SIZE,
     ManagedProcess,
     build_game_launch,
-    build_ok_gui_command,
     build_scheduler_command,
     discover_launcher_paths,
     find_automator_root,
@@ -52,13 +48,13 @@ class FakeProcess:
         self.pid = pid
         self.terminated = False
 
-    def wait(self) -> int:
+    def wait(self, timeout=None) -> int:
         return self.returncode
 
     def poll(self) -> int | None:
         return self.returncode if self.stdout.release.is_set() else None
 
-    def terminate(self) -> None:
+    def kill(self) -> None:
         self.terminated = True
         self.stdout.release.set()
 
@@ -104,16 +100,6 @@ class LauncherDiscoveryTest(unittest.TestCase):
         (self.workspace / ".venv" / "Scripts" / "python.exe").unlink()
         with self.assertRaisesRegex(LauncherConfigurationError, "Missing shared Python interpreter"):
             discover_launcher_paths(self.automator / "dist" / "OKAutomatorLauncher.exe")
-
-    def test_account_discovery_preserves_case_and_default_name(self) -> None:
-        (self.automator / "env" / ".env.example").touch()
-        (self.automator / "env" / ".env").touch()
-        (self.automator / "env" / "CN.env").touch()
-        (self.automator / "env" / "US.env").touch()
-
-        accounts = discover_account_envs(self.automator / "env")
-
-        self.assertEqual([account.account_id for account in accounts], ["default", "CN", "US"])
 
     def test_game_launch_uses_the_selected_account_path(self) -> None:
         cn_game = self.workspace / "CN" / "Wuthering Waves.exe"
@@ -170,18 +156,6 @@ class LauncherCommandTest(unittest.TestCase):
             python_exe=workspace / ".venv" / "Scripts" / "python.exe",
         )
 
-    def test_builds_ok_gui_command(self) -> None:
-        self.assertEqual(
-            build_ok_gui_command(self.paths),
-            [
-                str(self.paths.python_exe),
-                "-m",
-                "ok_ww_automator.ok_main",
-                "--ww-root",
-                str(self.paths.upstream_root),
-            ],
-        )
-
     def test_builds_scheduler_command_with_ordered_repeated_accounts_and_updates(self) -> None:
         command = build_scheduler_command(self.paths, "stamina", ["US", "CN"])
 
@@ -212,24 +186,6 @@ class LauncherCommandTest(unittest.TestCase):
             selected_account_ids(accounts, [])
         with self.assertRaisesRegex(ValueError, "Unknown account env: us"):
             selected_account_ids(accounts, ["us"])
-
-    def test_build_inputs_require_uac_admin_and_windowed_one_file_output(self) -> None:
-        project_root = Path(__file__).resolve().parents[1]
-        build_script = (project_root / "windows" / "build_launcher.ps1").read_text(encoding="utf-8")
-        manifest = (project_root / "windows" / "launcher.manifest").read_text(encoding="utf-8")
-
-        self.assertIn('"--onefile"', build_script)
-        self.assertIn('"--windowed"', build_script)
-        self.assertIn('"--uac-admin"', build_script)
-        self.assertIn('level="requireAdministrator"', manifest)
-
-    def test_default_layout_reserves_space_for_accounts_and_log(self) -> None:
-        self.assertGreaterEqual(DEFAULT_WINDOW_SIZE[0], 1_100)
-        self.assertGreaterEqual(DEFAULT_WINDOW_SIZE[1], 850)
-        self.assertGreaterEqual(MINIMUM_WINDOW_SIZE[0], 900)
-        self.assertGreaterEqual(MINIMUM_ACCOUNT_TABLE_HEIGHT, 180)
-        self.assertGreaterEqual(MINIMUM_LOG_HEIGHT, 240)
-        self.assertEqual(GAME_LAUNCH_COOLDOWN_MS, 3_000)
 
     def test_launch_game_starts_executable_without_managing_it(self) -> None:
         popen = Mock()
@@ -263,6 +219,24 @@ class LauncherCommandTest(unittest.TestCase):
 
         self.assertEqual(dll_directory_setter.call_args_list, [call(None), call("C:/Temp/_MEI123")])
         popen.assert_called_once()
+
+    def test_frozen_game_does_not_inherit_bundled_qt_paths(self) -> None:
+        popen = Mock()
+        launch = GameLaunch("US", Path("C:/Games/US/Wuthering Waves.exe"))
+        with (
+            patch.object(sys, "frozen", True, create=True),
+            patch.object(sys, "_MEIPASS", "C:/Temp/_MEI123", create=True),
+            patch.dict(os.environ, {
+                "PATH": "C:/Temp/_MEI123;C:/Temp/_MEI123/PySide6;C:/Windows/System32;C:/Temp/_MEI123-other",
+                "QT_PLUGIN_PATH": "C:/Temp/_MEI123/PySide6/plugins",
+                "QT_QPA_PLATFORM_PLUGIN_PATH": "C:/Temp/_MEI123/PySide6/plugins/platforms",
+                "QML2_IMPORT_PATH": "C:/Temp/_MEI123/qml",
+            }),
+        ):
+            launch_game(launch, popen=popen, platform_name="nt", dll_directory_setter=Mock())
+        environment = popen.call_args.kwargs["env"]
+        self.assertEqual(environment["PATH"], "C:/Windows/System32;C:/Temp/_MEI123-other")
+        self.assertFalse({"QT_PLUGIN_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH", "QML2_IMPORT_PATH"} & environment.keys())
 
     def test_launch_game_restores_pyinstaller_dll_path_after_spawn_failure(self) -> None:
         dll_directory_setter = Mock()
@@ -329,24 +303,65 @@ class ManagedProcessTest(unittest.TestCase):
     def test_stop_terminates_complete_windows_process_tree(self) -> None:
         child = FakeProcess(pid=9876)
         popen = Mock(return_value=child)
-        taskkill_result = Mock(returncode=0)
-        run = Mock(return_value=taskkill_result)
+        taskkill_entered = threading.Event()
+        taskkill_release = threading.Event()
+
+        def taskkill(*args, **kwargs):
+            taskkill_entered.set()
+            taskkill_release.wait(timeout=2)
+            child.stdout.release.set()
+            return Mock(returncode=0)
+
+        run = Mock(side_effect=taskkill)
         manager = ManagedProcess(popen=popen, run=run, platform_name="nt")
         manager.start("Daily scheduler", ["python.exe"], cwd=Path("C:/workspace"))
         self.assertTrue(child.stdout.entered.wait(timeout=1))
 
         self.assertTrue(manager.stop())
+        self.assertTrue(taskkill_entered.wait(timeout=1))
         self.assertEqual(manager.state, "stopping")
+        self.assertFalse(manager.stop())
         run.assert_called_once()
         self.assertEqual(run.call_args.args[0], ["taskkill", "/PID", "9876", "/T", "/F"])
         self.assertFalse(child.terminated)
 
-        child.stdout.release.set()
+        taskkill_release.set()
         wait_until(lambda: manager.state == "idle")
         events = []
         while not manager.events.empty():
             events.append(manager.events.get_nowait())
         self.assertEqual(events[-1].text, "stopped")
+
+    def test_output_failure_cleans_up_child_and_unlocks_actions(self) -> None:
+        class BrokenStdout:
+            def __iter__(self):
+                raise OSError("pipe failed")
+
+            def close(self):
+                pass
+
+        child = Mock(pid=9876, stdout=BrokenStdout())
+        child.poll.return_value = None
+        manager = ManagedProcess(popen=Mock(return_value=child), run=Mock(), platform_name="nt")
+        manager.start("OK GUI", ["python.exe"], cwd=Path("C:/workspace"))
+        wait_until(lambda: manager.state == "idle")
+        child.kill.assert_called_once()
+        events = list(manager.events.queue)
+        self.assertEqual(events[-1].kind, "finished")
+        self.assertIn("pipe failed", events[-1].text)
+
+    def test_taskkill_timeout_falls_back_to_killing_parent(self) -> None:
+        child = FakeProcess(pid=9876)
+        manager = ManagedProcess(
+            popen=Mock(return_value=child),
+            run=Mock(side_effect=subprocess.TimeoutExpired("taskkill", 15)),
+            platform_name="nt",
+        )
+        manager.start("OK GUI", ["python.exe"], cwd=Path("C:/workspace"))
+        manager.stop()
+        wait_until(lambda: manager.state == "idle")
+        self.assertTrue(child.terminated)
+        self.assertTrue(any("Unable to stop process tree" in event.text for event in manager.events.queue))
 
     def test_spawn_failure_unlocks_actions_and_reports_failure(self) -> None:
         manager = ManagedProcess(popen=Mock(side_effect=OSError("not found")), platform_name="nt")

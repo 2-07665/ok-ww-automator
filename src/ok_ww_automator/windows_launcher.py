@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import ntpath
 import os
+import signal
 from pathlib import Path
 import queue
 import subprocess
@@ -12,7 +14,7 @@ import threading
 from typing import Callable, Iterable, Sequence
 
 from .config import ConfigError, read_dotenv
-from .env_discovery import AccountEnv, discover_account_envs
+from .env_discovery import AccountEnv
 from .farm_progress import FarmProgress, read_progress
 from .time_utils import parse_time_of_day
 
@@ -202,6 +204,7 @@ def launch_game(
         popen(
             [str(launch.executable)],
             cwd=str(launch.executable.parent),
+            env=external_process_environment(platform_name),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -211,6 +214,20 @@ def launch_game(
     finally:
         if dll_directory_setter is not None and restore_dll_directory is not None:
             dll_directory_setter(restore_dll_directory)
+
+def external_process_environment(platform_name: str = os.name) -> dict[str, str]:
+    """Keep frozen Qt/DLL paths out of independent Python and game processes."""
+    environment = dict(os.environ)
+    if platform_name == "nt" and getattr(sys, "frozen", False):
+        root = ntpath.normcase(ntpath.normpath(str(sys._MEIPASS)))
+        for key in ("QT_PLUGIN_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH", "QML2_IMPORT_PATH"):
+            environment.pop(key, None)
+        environment["PATH"] = ";".join(
+            path for path in environment.get("PATH", "").split(";")
+            if not (ntpath.normcase(ntpath.normpath(path.strip('"'))) == root
+                    or ntpath.normcase(ntpath.normpath(path.strip('"'))).startswith(root + "\\"))
+        )
+    return environment
 
 
 def set_windows_dll_directory(path: str | None) -> None:
@@ -258,19 +275,12 @@ class ManagedProcess:
             self._operation = operation
             self._stop_requested = False
 
-        child_env = dict(os.environ)
+        child_env = external_process_environment(self._platform_name)
         child_env["PYTHONUNBUFFERED"] = "1"
         child_env["PYTHONIOENCODING"] = "utf-8"
         restore_dll_directory = None
         if self._platform_name == "nt" and getattr(sys, "frozen", False):
             restore_dll_directory = str(sys._MEIPASS)
-            # The external Python runtime must load its own Qt, not the frozen GUI's.
-            for key in ("QT_PLUGIN_PATH", "QML2_IMPORT_PATH"):
-                child_env.pop(key, None)
-            child_env["PATH"] = os.pathsep.join(
-                path for path in child_env.get("PATH", "").split(os.pathsep)
-                if os.path.normcase(path) != os.path.normcase(restore_dll_directory)
-            )
         try:
             if restore_dll_directory is not None:
                 set_windows_dll_directory(None)
@@ -286,6 +296,7 @@ class ManagedProcess:
                 errors="replace",
                 bufsize=1,
                 shell=False,
+                start_new_session=self._platform_name != "nt",
                 creationflags=CREATE_NO_WINDOW if self._platform_name == "nt" else 0,
             )
         except Exception as exc:
@@ -305,61 +316,97 @@ class ManagedProcess:
 
     def _collect_output(self, process: subprocess.Popen[str], operation: str, log_path: Path | None = None) -> None:
         log_file = None
-        if log_path is not None:
-            try:
-                log_path.parent.mkdir(parents=True, exist_ok=True)
-                log_file = log_path.open("w", encoding="utf-8", buffering=1)
-            except OSError as exc:
-                self.events.put(ProcessEvent("output", operation, text=f"Unable to save log: {exc}\n"))
-        if process.stdout is not None:
-            for line in process.stdout:
-                if log_file is not None:
+        error = ""
+        returncode = None
+        try:
+            if log_path is not None:
+                try:
+                    log_path.parent.mkdir(parents=True, exist_ok=True)
+                    log_file = log_path.open("w", encoding="utf-8", buffering=1)
+                except OSError as exc:
+                    self.events.put(ProcessEvent("output", operation, text=f"Unable to save log: {exc}\n"))
+            if process.stdout is not None:
+                for line in process.stdout:
+                    if log_file is not None:
+                        try:
+                            log_file.write(line)
+                        except OSError as exc:
+                            self.events.put(ProcessEvent("output", operation, text=f"Unable to save log: {exc}\n"))
+                            try:
+                                log_file.close()
+                            except OSError:
+                                pass
+                            log_file = None
+                    progress = read_progress(line) if operation == "Auto Farm" else None
+                    if progress is not None:
+                        self.events.put(ProcessEvent("progress", operation, progress=progress))
+                    else:
+                        self.events.put(ProcessEvent("output", operation, text=line))
+            returncode = process.wait()
+        except Exception as exc:
+            error = f"Unable to read process output: {exc}"
+            self.events.put(ProcessEvent("output", operation, text=error + "\n"))
+            self._terminate(process, operation)
+            # Keep ownership until the child exits, even if termination failed.
+            # The UI remains responsive and can retry Stop in that case.
+            process.wait()
+        finally:
+            for stream in (log_file, process.stdout):
+                if stream is not None:
                     try:
-                        log_file.write(line)
-                    except OSError:
-                        log_file.close()
-                        log_file = None
-                progress = read_progress(line) if operation == "Auto Farm" else None
-                if progress is not None:
-                    self.events.put(ProcessEvent("progress", operation, progress=progress))
-                else:
-                    self.events.put(ProcessEvent("output", operation, text=line))
-        if log_file is not None:
-            log_file.close()
-        returncode = process.wait()
-        with self._lock:
-            stopped = self._stop_requested
-            if self._process is process:
-                self._process = None
-                self._state = "idle"
-        outcome = "stopped" if stopped else ("completed" if returncode == 0 else "failed")
-        self.events.put(ProcessEvent("finished", operation, text=outcome, returncode=returncode))
+                        stream.close()
+                    except (OSError, AttributeError):
+                        pass
+            with self._lock:
+                stopped = self._stop_requested
+                if self._process is process:
+                    self._process = None
+                    self._state = "idle"
+            outcome = error or ("stopped" if stopped else ("completed" if returncode == 0 else "failed"))
+            self.events.put(ProcessEvent("finished", operation, text=outcome, returncode=returncode))
 
     def stop(self) -> bool:
         with self._lock:
             process = self._process
-            if process is None or self._state == "idle":
+            if process is None or self._state in {"idle", "stopping"}:
                 return False
             self._stop_requested = True
             self._state = "stopping"
             operation = self._operation
 
         self.events.put(ProcessEvent("stopping", operation))
-        if self._platform_name == "nt":
-            result = self._run(
-                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                check=False,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.STDOUT,
-                creationflags=CREATE_NO_WINDOW,
-            )
-            if result.returncode != 0 and process.poll() is None:
-                process.terminate()
-        elif process.poll() is None:
-            process.terminate()
+        # taskkill can stall; never block the Qt event loop while stopping a run.
+        threading.Thread(target=self._terminate, args=(process, operation), daemon=True).start()
         return True
 
-
+    def _terminate(self, process: subprocess.Popen[str], operation: str) -> None:
+        try:
+            if self._platform_name == "nt":
+                self._run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.STDOUT,
+                    creationflags=CREATE_NO_WINDOW,
+                    timeout=15,
+                )
+            else:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        except Exception as exc:
+            self.events.put(ProcessEvent("output", operation, text=f"Unable to stop process tree: {exc}\n"))
+        finally:
+            if process.poll() is None:
+                try:
+                    process.kill()
+                except OSError as exc:
+                    self.events.put(ProcessEvent("output", operation, text=f"Unable to stop process: {exc}\n"))
+                    with self._lock:
+                        if self._process is process:
+                            self._state = "running"
+                            self._stop_requested = False
 
 def main() -> int:
     from PySide6.QtGui import QFont

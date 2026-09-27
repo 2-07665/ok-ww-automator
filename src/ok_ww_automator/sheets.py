@@ -6,6 +6,7 @@ import argparse
 import base64
 from dataclasses import asdict
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 import sys
@@ -119,7 +120,6 @@ class ConfigSheetParser:
 
     def to_run_config(self, parsed: ParsedConfigSheet) -> SheetRunConfig:
         values: dict[str, Any] = {}
-        defaults = SheetRunConfig()
 
         for field in CONFIG_FIELDS:
             raw_value = parsed.get(field.label)
@@ -127,31 +127,7 @@ class ConfigSheetParser:
                 continue
             values[field.field_name] = _parse_field_value(field, raw_value)
 
-        return SheetRunConfig(
-            run_daily=values.get("run_daily", defaults.run_daily),
-            skip_daily_once=values.get("skip_daily_once", defaults.skip_daily_once),
-            shutdown_after_daily=values.get("shutdown_after_daily", defaults.shutdown_after_daily),
-            run_nightmare=values.get("run_nightmare", defaults.run_nightmare),
-            farm_nightmare_purification=values.get(
-                "farm_nightmare_purification", defaults.farm_nightmare_purification
-            ),
-            farm_tacet_discord_nest=values.get(
-                "farm_tacet_discord_nest", defaults.farm_tacet_discord_nest
-            ),
-            run_stamina=values.get("run_stamina", defaults.run_stamina),
-            skip_stamina_once=values.get("skip_stamina_once", defaults.skip_stamina_once),
-            shutdown_after_stamina=values.get("shutdown_after_stamina", defaults.shutdown_after_stamina),
-            which_to_farm=values.get("which_to_farm", defaults.which_to_farm),
-            tacet_serial=values.get("tacet_serial", defaults.tacet_serial),
-            tacet_name=values.get("tacet_name", defaults.tacet_name),
-            tacet_set1=values.get("tacet_set1", defaults.tacet_set1),
-            tacet_set2=values.get("tacet_set2", defaults.tacet_set2),
-            forgery_serial=values.get("forgery_serial", defaults.forgery_serial),
-            forgery_name=values.get("forgery_name", defaults.forgery_name),
-            forgery_weapon_type=values.get("forgery_weapon_type", defaults.forgery_weapon_type),
-            forgery_version=values.get("forgery_version", defaults.forgery_version),
-            simulation_material=values.get("simulation_material", defaults.simulation_material),
-        )
+        return SheetRunConfig(**values)
 
 
 class GoogleSheetsStore:
@@ -205,19 +181,19 @@ class GoogleSheetsStore:
 
     def append_daily_result(self, result: RunResult) -> None:
         self._worksheet(self.config.daily_runs_sheet).append_row(
-            result.as_daily_row(),
+            literal_log_row(result.as_daily_row()),
             value_input_option=VALUE_INPUT_USER_ENTERED,
         )
 
     def append_stamina_result(self, result: RunResult) -> None:
         self._worksheet(self.config.stamina_runs_sheet).append_row(
-            result.as_stamina_row(),
+            literal_log_row(result.as_stamina_row()),
             value_input_option=VALUE_INPUT_USER_ENTERED,
         )
 
     def append_fast_farm_result(self, result: FastFarmResult) -> None:
         self._worksheet(self.config.fast_farm_runs_sheet).append_row(
-            result.as_row(),
+            literal_log_row(result.as_row()),
             value_input_option=VALUE_INPUT_USER_ENTERED,
         )
 
@@ -264,6 +240,22 @@ def column_to_a1(column: int) -> str:
         column, remainder = divmod(column - 1, 26)
         letters = chr(65 + remainder) + letters
     return letters
+
+
+def literal_log_row(values: list[str]) -> list[str]:
+    """Protect log text from formulas while retaining numeric/date cells.
+
+    An apostrophe tells Sheets to store the following string literally. Keep
+    USER_ENTERED for ordinary cells because result rows include stringified
+    numbers and timestamps used by existing sheet filters and calculations.
+    """
+    def protect(value: str) -> str:
+        stripped = value.strip()
+        if stripped.startswith(("=", "+", "-", "@")) and not re.fullmatch(r"[+-]?\d+(?:\.\d+)?", stripped):
+            return "'" + value
+        return value
+
+    return [protect(value) for value in values]
 
 
 def _parse_field_value(field: ConfigField, raw_value: str) -> Any:

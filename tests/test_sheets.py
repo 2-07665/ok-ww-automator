@@ -127,13 +127,20 @@ class SheetsTest(unittest.TestCase):
         started = dt.datetime(2026, 5, 16, 3, 0, tzinfo=BEIJING_TZ)
         ended = dt.datetime(2026, 5, 16, 3, 1, tzinfo=BEIJING_TZ)
 
-        store.append_daily_result(RunResult("daily", started, ended, "success", daily_points=100))
-        store.append_stamina_result(RunResult("stamina", started, ended, "skipped"))
-        store.append_fast_farm_result(FastFarmResult(started, ended, "success", fight_count=1))
+        error_formula = '=IMPORTXML("https://example.test", "//data")'
+        store.append_daily_result(RunResult("daily", started, ended, "success", daily_points=100, error=error_formula))
+        store.append_stamina_result(RunResult("stamina", started, ended, "skipped", decision=" +SUM(A1:A2)"))
+        store.append_fast_farm_result(FastFarmResult(started, ended, "success", fight_count=1, info="-SUM(A1:A2)"))
 
         self.assertEqual(daily_sheet.appended_rows[0][0][:4], ["2026-05-16 03:00:00", "2026-05-16 03:01:00", "1m", "success"])
         self.assertEqual(stamina_sheet.appended_rows[0][0][:4], ["2026-05-16 03:00:00", "2026-05-16 03:01:00", "1m", "skipped"])
         self.assertEqual(fast_farm_sheet.appended_rows[0][0][:4], ["2026-05-16 03:00:00", "2026-05-16 03:01:00", "1m", "success"])
+        self.assertIn("'" + error_formula, daily_sheet.appended_rows[0][0])
+        self.assertIn("100", daily_sheet.appended_rows[0][0])
+        self.assertIn("' +SUM(A1:A2)", stamina_sheet.appended_rows[0][0])
+        self.assertIn("'-SUM(A1:A2)", fast_farm_sheet.appended_rows[0][0])
+        for worksheet in (daily_sheet, stamina_sheet, fast_farm_sheet):
+            self.assertEqual(worksheet.appended_rows[0][1]["value_input_option"], "USER_ENTERED")
 
 
 if __name__ == "__main__":

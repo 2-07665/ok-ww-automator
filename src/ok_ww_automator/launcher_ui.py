@@ -277,7 +277,15 @@ class LauncherWindow(FluentWindow):
         self._sync_controls()
 
     def _refresh_accounts(self):
-        self.accounts = discover_account_envs(self.paths.automator_root / "env") if self.paths else []
+        try:
+            self.accounts = discover_account_envs(self.paths.automator_root / "env") if self.paths else []
+        except (OSError, ValueError) as exc:
+            self.accounts = []
+            self._fill_accounts(set())
+            message = f"账号配置不可用：{exc}"
+            self.scheduler_status.setText(message)
+            self._append_log(message)
+            return
         self._fill_accounts({account.account_id for account in self.accounts})
         self.scheduler_status.setText("按列表顺序运行所选账号。" if self.accounts else "未发现账号配置。")
 

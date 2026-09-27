@@ -17,10 +17,11 @@ from ok_ww_automator.waves_api import (
 
 
 class FakeResponse:
-    def __init__(self, payload=None, text="", json_exc=None) -> None:
+    def __init__(self, payload=None, text="", json_exc=None, status_code=200) -> None:
         self.payload = payload
         self.text = text
         self.json_exc = json_exc
+        self.status_code = status_code
 
     def json(self):
         if self.json_exc is not None:
@@ -79,6 +80,13 @@ class WavesApiTest(unittest.TestCase):
     def test_is_api_success_accepts_legacy_signin_code(self) -> None:
         self.assertTrue(is_api_success({"code": 1511}))
         self.assertFalse(is_api_success({"code": 500}))
+
+    def test_http_and_explicit_api_failures_cannot_report_success(self) -> None:
+        response = parse_response(FakeResponse({"success": True, "code": 0}, status_code=503))
+        self.assertFalse(is_api_success(response))
+        self.assertEqual(response["msg"], "HTTP 503")
+        self.assertFalse(is_api_success({"code": False}))
+        self.assertFalse(is_api_success({"success": False, "code": 0}))
 
     def test_server_id_for_role_uses_net_mapping(self) -> None:
         self.assertEqual(server_id_for_role("100000001"), SERVER_ID)

@@ -1,4 +1,6 @@
 from pathlib import Path
+import io
+import json
 import sys
 import unittest
 from unittest.mock import patch
@@ -26,13 +28,18 @@ class SheetsCliTest(unittest.TestCase):
         config_sheet = FakeWorksheet([["日常任务", "TRUE", "体力任务", "FALSE"]])
         fake_spreadsheet = FakeSpreadsheet({"Config": config_sheet})
 
+        output = io.StringIO()
         with patch("ok_ww_automator.sheets.load_config", return_value=app_config), patch(
             "ok_ww_automator.sheets._open_spreadsheet",
             return_value=fake_spreadsheet,
-        ), patch("sys.stdout"):
+        ), patch("sys.stdout", output):
             code = main(["--env-file", "cn.env", "--show-cells"])
 
         self.assertEqual(code, 0)
+        config_json, cells = output.getvalue().split("\nConfig cells:\n", 1)
+        self.assertTrue(json.loads(config_json)["run_daily"])
+        self.assertFalse(json.loads(config_json)["run_stamina"])
+        self.assertIn("日常任务: 'TRUE' (B1)", cells)
 
 
 if __name__ == "__main__":
