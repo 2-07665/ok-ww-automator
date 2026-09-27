@@ -22,3 +22,5 @@ uv run --active python -m ok_ww_automator.ok_main
 ```
 
 This acts as a drop-in replacement for `python main.py` in `ok-wuthering-waves`, appending tasks like `FastFarmEchoTask` and `FiveToOneTask` to the in-memory configuration without modifying the upstream source.
+
+The launcher no longer replaces `FindFeature.find_feature` globally: the tested runtime handles missing frames itself. This removes a dependency on an upstream implementation detail; it does not add a version gate or promise compatibility with every upstream release. Scheduled runs install the upstream requirements during their update step; after updating a development checkout manually, install its requirements into the shared environment as well.

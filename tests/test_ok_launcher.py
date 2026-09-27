@@ -11,7 +11,6 @@ from ok_ww_automator.ok_launcher import (
     OkLauncher,
     OkLaunchOptions,
     get_task_error,
-    install_runtime_safety_patches,
     is_ok_ready,
     kill_game_processes,
     run_onetime_task,
@@ -111,19 +110,6 @@ class FakeTask:
         if key in {"Error", "error"}:
             return self.error
         return default
-
-
-class FakeFindFeature:
-    def __init__(self, executor) -> None:
-        self.executor = executor
-
-    def find_feature(self, *args, **kwargs):
-        return ["found"]
-
-
-class FakeFeatureExecutor:
-    def __init__(self, frame=None) -> None:
-        self.frame = frame
 
 
 class Clock:
@@ -229,26 +215,6 @@ class OkLauncherTest(unittest.TestCase):
 
         self.assertEqual(device_manager.selected_imeis, ["pc_123"])
         self.assertTrue(ok.task_executor.started)
-
-    def test_runtime_patch_treats_missing_feature_frame_as_not_found(self) -> None:
-        module = type(sys)("ok.task.task")
-        module.FindFeature = FakeFindFeature
-
-        with patch.dict(sys.modules, {"ok.task.task": module}):
-            install_runtime_safety_patches()
-            feature_finder = module.FindFeature(FakeFeatureExecutor(frame=None))
-
-            self.assertEqual(feature_finder.find_feature("char_1_text"), [])
-
-    def test_runtime_patch_leaves_real_feature_frames_alone(self) -> None:
-        module = type(sys)("ok.task.task")
-        module.FindFeature = FakeFindFeature
-
-        with patch.dict(sys.modules, {"ok.task.task": module}):
-            install_runtime_safety_patches()
-            feature_finder = module.FindFeature(FakeFeatureExecutor(frame=FakeFrame()))
-
-            self.assertEqual(feature_finder.find_feature("char_1_text"), ["found"])
 
     def test_start_ok_uses_headless_config_and_keeps_ww_root_during_construction(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

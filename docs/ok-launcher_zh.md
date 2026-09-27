@@ -22,3 +22,5 @@ uv run --active python -m ok_ww_automator.ok_main
 ```
 
 这可以作为 `ok-wuthering-waves` 中 `python main.py` 的直接替代品，它会在内存配置中追加如 `FastFarmEchoTask` 和 `FiveToOneTask` 等任务，而无需修改上游源代码。
+
+启动器不再全局替换 `FindFeature.find_feature`：已验证的运行环境自行处理空帧，原补丁已冗余。删除补丁减少了对上游实现细节的依赖，不增加版本门槛，也不承诺兼容所有上游版本。每日调度更新时会安装上游依赖；开发环境手动更新源码后，也应将其依赖安装到共享虚拟环境。
