@@ -7,6 +7,7 @@ be installed yet.
 
 from __future__ import annotations
 
+import datetime as dt
 import math
 import os
 import re
@@ -20,6 +21,12 @@ DEFAULT_ENV_PATH = Path("env") / ".env"
 
 TRUE_VALUES = {"true", "1", "yes", "y", "是", "on"}
 FALSE_VALUES = {"false", "0", "no", "n", "否", "off"}
+
+# Game servers keep fixed offsets throughout the year, independent of OS DST.
+GAME_SERVER_TIMEZONES = {
+    server: dt.timezone(dt.timedelta(hours=offset))
+    for server, offset in {"CN": 8, "US": -5, "EU": 1, "ASIA": 8, "SEA": 8, "HMT": 8}.items()
+}
 
 
 class ConfigError(RuntimeError):
@@ -151,6 +158,13 @@ class AppConfig:
     notice: NoticeConfig = field(default_factory=NoticeConfig)
     healthchecks: HealthchecksConfig = field(default_factory=HealthchecksConfig)
     weekly_run: WeeklyRunConfig = field(default_factory=WeeklyRunConfig)
+    game_server: str | None = None
+
+    def require_game_server(self) -> str:
+        server = _game_server(self.game_server)
+        if server is None:
+            raise ConfigError("Missing GAME_SERVER: required for weekly mode (CN, US, EU, ASIA, SEA, HMT)")
+        return server
 
     def require_game_exe_path(self) -> Path:
         if self.game_exe_path is None:
@@ -180,6 +194,7 @@ def load_config(
         project_root=root,
         env_path=resolved_env_path,
         game_exe_path=_path_or_none(values.get("GAME_EXE_PATH")),
+        game_server=_game_server(values.get("GAME_SERVER")),
         daily_run_time=DailyRunTimeConfig(
             hour=_int_value(values, "DAILY_HOUR", 5, minimum=0, maximum=23),
             minute=_int_value(values, "DAILY_MINUTE", 0, minimum=0, maximum=59),
@@ -341,6 +356,15 @@ def _int_value(
     if value < minimum or value > maximum:
         raise ConfigError(f"{name} must be between {minimum} and {maximum}")
     return value
+
+
+def _game_server(raw: str | None) -> str | None:
+    server = (raw or "").strip().upper()
+    if not server:
+        return None
+    if server not in GAME_SERVER_TIMEZONES:
+        raise ConfigError("GAME_SERVER must be one of CN, US, EU, ASIA, SEA, HMT")
+    return server
 
 
 def _weekly_run_days(raw: str | None) -> tuple[int, ...]:

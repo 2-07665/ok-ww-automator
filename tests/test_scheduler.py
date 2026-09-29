@@ -135,8 +135,8 @@ class SchedulerTest(unittest.TestCase):
         self.tmp = Path(self._tmp_dir.name).resolve()
         self.env_dir = self.tmp / "env"
         self.env_dir.mkdir()
-        (self.env_dir / "cn.env").touch()
-        (self.env_dir / "global.env").touch()
+        (self.env_dir / "cn.env").write_text("GAME_SERVER=CN\n", encoding="utf-8")
+        (self.env_dir / "global.env").write_text("GAME_SERVER=US\n", encoding="utf-8")
 
     def tearDown(self) -> None:
         self._tmp_dir.cleanup()

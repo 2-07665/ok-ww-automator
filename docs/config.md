@@ -6,18 +6,19 @@ Copy `env/.env.example` for each account. The scheduler discovers `env/*.env`, e
 
 Standalone configuration and Sheets CLI default to `env/.env`; `ENV_FILE=cn.env` resolves to `env/cn.env`. Select scheduler profiles with `--account cn`. Values preserve Unicode; shell variables are not expanded. Double-quoted values decode escapes such as `\n`, `\r` and `\t`. For Windows paths use single quotes, an unquoted value, or forward slashes (for example `GAME_EXE_PATH='D:\new\tools\Game.exe'`).
 
-Daily/stamina require Sheets credentials, and game attempts require `GAME_EXE_PATH`. Weekly only needs the game and optional WxPusher configuration. Waves API, notifications and Healthchecks require their credentials when enabled; Healthchecks requires both daily and stamina UUIDs.
+Daily/stamina require Sheets credentials, and game attempts require `GAME_EXE_PATH`. Weekly requires `GAME_SERVER`, the game and optional WxPusher configuration. Waves API, notifications and Healthchecks require their credentials when enabled; Healthchecks requires both daily and stamina UUIDs.
 
 ## Environment variables
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `ENV_FILE` | `env/.env` | Path to the dotenv file. |
+| `GAME_SERVER` | *unset* | Required for weekly mode: `CN`, `US`, `EU`, `ASIA`, `SEA`, `HMT` (case-insensitive). Set per account; never inferred from filenames. |
 | `GAME_EXE_PATH` | *unset* | Absolute path to `Wuthering Waves.exe`. |
 | `DAILY_HOUR` | `5` | Assumed daily task run hour (0-23, UTC+8). Used for stamina calculations. |
 | `DAILY_MINUTE` | `0` | Assumed daily task run minute (0-59). |
-| `WEEKLY_RUN_DAYS` | `1,2,3,4,5,6,7` | Allowed Beijing calendar weekdays per account, e.g. `1,3,5`. Omitted/blank allows every day. Manual weekly runs ignore this filter. |
-| `WEEKLY_NOTICE_DAY` | `7` | Weekly failure notice day in Beijing time, 1=Monday through 7=Sunday. An invocation on/after this day notifies if the week is incomplete, including excluded run days. |
+| `WEEKLY_RUN_DAYS` | `1,2,3,4,5,6,7` | Allowed server calendar weekdays per account, e.g. `1,3,5`. Omitted/blank allows every day. Manual weekly runs ignore this filter. |
+| `WEEKLY_NOTICE_DAY` | `7` | Weekly failure notice day in server time, 1=Monday through 7=Sunday. An invocation on/after this day notifies if the week is incomplete, including excluded run days. |
 | `GOOGLE_SHEET_ID` | *unset* | Target Google Spreadsheet ID. |
 | `GOOGLE_SERVICE_ACCOUNT_JSON_BASE64` | *unset* | Base64 encoded Service Account JSON credentials. |
 | `SHEET_NAME_CONFIG` | `Config` | Name of the configuration worksheet. |
@@ -45,4 +46,4 @@ Daily/stamina require Sheets credentials, and game attempts require `GAME_EXE_PA
 
 Booleans accept `true/false`, `1/0`, `yes/no`, `on/off`, `是/否`, with case-insensitive English values.
 
-`DAILY_HOUR`/`DAILY_MINUTE` only set the Beijing-time prediction target; Windows triggers use system-local time. Weeks reset Monday 04:00 Beijing time. See [weekly operations](operations.md#weekly-garden) for run-day and notice-day behavior.
+`DAILY_HOUR`/`DAILY_MINUTE` only set the Beijing-time prediction target; Windows triggers use system-local time. Weeks reset Monday 04:00 on the configured server clock. See [weekly operations](operations.md#weekly-garden) for run-day and notice-day behavior.

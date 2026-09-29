@@ -10,19 +10,19 @@ import time
 from dataclasses import replace
 from typing import Callable
 
-from .config import AppConfig
+from .config import AppConfig, GAME_SERVER_TIMEZONES
 from .console import console_print
 from .game_clients import WeeklyGameClient
 from .models import RunResult, SheetRunConfig
 from .notices import WxPusherNoticeClient
-from .time_utils import BEIJING_TZ, now
+from .time_utils import now
 
 WEEKLY_TIMEOUT_SECONDS = 40 * 60
 WEEKLY_MAX_ATTEMPTS = 2  # First attempt plus at most one retry per invocation.
 
 
-def week_start(value: dt.datetime) -> dt.datetime:
-    local = value.astimezone(BEIJING_TZ)
+def week_start(value: dt.datetime, server_tz: dt.tzinfo) -> dt.datetime:
+    local = value.astimezone(server_tz)
     monday = (local - dt.timedelta(days=local.weekday())).replace(
         hour=4, minute=0, second=0, microsecond=0
     )
@@ -48,6 +48,8 @@ class WeeklyRunner:
         timeout_seconds: float = WEEKLY_TIMEOUT_SECONDS,
     ) -> None:
         self.config = app_config
+        self.server = app_config.require_game_server()
+        self.server_tz = GAME_SERVER_TIMEZONES[self.server]
         self.game_client = game_client
         self.run_now = run_now
         self.prepare = prepare
@@ -57,7 +59,7 @@ class WeeklyRunner:
         self.timeout_seconds = timeout_seconds
 
     def run(self) -> RunResult:
-        current = self.clock().astimezone(BEIJING_TZ)
+        current = self.clock().astimezone(self.server_tz)
         result = RunResult("weekly", current, None, "skipped")
         # The env file identifies an account, independently of optional notice labels.
         account = os.path.normcase(str(self.config.env_path.resolve()))
@@ -78,27 +80,30 @@ class WeeklyRunner:
                 result.decision = "此账号的周常任务正在运行"
                 return result
             db.execute("""CREATE TABLE IF NOT EXISTS weeks (
-                week TEXT PRIMARY KEY, deadline TEXT, success INTEGER NOT NULL DEFAULT 0,
-                error TEXT, finalized INTEGER NOT NULL DEFAULT 0
+                server TEXT NOT NULL, week TEXT NOT NULL, deadline TEXT,
+                success INTEGER NOT NULL DEFAULT 0, completed_at TEXT,
+                error TEXT, finalized INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (server, week)
             )""")
-            start = week_start(current)
-            week = start.date().isoformat()
+            start = week_start(current, self.server_tz)
+            week = start.astimezone(dt.timezone.utc).isoformat()
+            week_label = f"{start.date().isoformat()} ({self.server})"
             # If the machine was off at the deadline, report an unfinished recorded
             # week on the next invocation, even if a new game week has begun.
             for row in db.execute(
-                "SELECT * FROM weeks WHERE week < ? AND success = 0 AND finalized = 0 AND deadline IS NOT NULL",
-                (week,),
+                "SELECT * FROM weeks WHERE server = ? AND week < ? AND success = 0 AND finalized = 0 AND deadline IS NOT NULL",
+                (self.server, week),
             ).fetchall():
                 previous = RunResult("weekly", current, current, "failure")
                 self._finish_failure(db, row, previous)
                 console_print(f"Weekly: {previous.decision}; {previous.error}")
 
             deadline = weekly_notice_start(start, self.config.weekly_run.notice_day)
-            db.execute("INSERT OR IGNORE INTO weeks (week) VALUES (?)", (week,))
-            db.execute("UPDATE weeks SET deadline = ? WHERE week = ?", (deadline.isoformat(), week))
-            row = db.execute("SELECT * FROM weeks WHERE week = ?", (week,)).fetchone()
+            db.execute("INSERT OR IGNORE INTO weeks (server, week) VALUES (?, ?)", (self.server, week))
+            db.execute("UPDATE weeks SET deadline = ? WHERE server = ? AND week = ?", (deadline.isoformat(), self.server, week))
+            row = db.execute("SELECT * FROM weeks WHERE server = ? AND week = ?", (self.server, week)).fetchone()
             if row["success"] and not self.run_now:
-                result.decision = f"{week} 起的这一周已成功，跳过"
+                result.decision = f"{week_label} 起的这一周已成功，跳过"
                 return result
 
             if not self.run_now and current.isoweekday() not in self.config.weekly_run.run_days:
@@ -109,25 +114,28 @@ class WeeklyRunner:
 
             error = self._attempt(start)
             if error is None:
-                db.execute("UPDATE weeks SET success = 1, error = NULL WHERE week = ?", (week,))
+                db.execute(
+                    "UPDATE weeks SET success = 1, error = NULL, completed_at = ? WHERE server = ? AND week = ?",
+                    (self.clock().astimezone(dt.timezone.utc).isoformat(), self.server, week),
+                )
                 result.status = "success"
-                result.decision = f"{week} 起的这一周 Garden 已完成"
+                result.decision = f"{week_label} 起的这一周 Garden 已完成"
                 return result
-            db.execute("UPDATE weeks SET error = ? WHERE week = ?", (error, week))
+            db.execute("UPDATE weeks SET error = ? WHERE server = ? AND week = ?", (error, self.server, week))
             result.status = "failure" if row["success"] else "needs review"
             result.error = error
             result.decision = (
                 "本次手动运行失败；保留本周此前的成功记录"
                 if row["success"] else "本次周常未成功，等待下次触发或手动重试"
             )
-            row = db.execute("SELECT * FROM weeks WHERE week = ?", (week,)).fetchone()
-            if self.clock().astimezone(BEIJING_TZ) >= deadline:
+            row = db.execute("SELECT * FROM weeks WHERE server = ? AND week = ?", (self.server, week)).fetchone()
+            if self.clock().astimezone(self.server_tz) >= deadline:
                 self._finish_failure(db, row, result)
             return result
         finally:
             db.commit()
             db.close()
-            result.ended_at = self.clock().astimezone(BEIJING_TZ)
+            result.ended_at = self.clock().astimezone(self.server_tz)
             console_print(f"Weekly: {result.status}; {result.decision or ''}; {result.error or ''}")
 
     def _attempt(self, start: dt.datetime) -> str | None:
@@ -144,13 +152,13 @@ class WeeklyRunner:
             remaining = deadline - self.monotonic()
             if remaining <= 0:
                 return timeout_error
-            if week_start(self.clock()) != start:
-                return "已跨过周一 04:00，本次未计为该周成功"
+            if week_start(self.clock(), self.server_tz) != start:
+                return f"已跨过 {self.server} 服务器周一 04:00，本次未计为该周成功"
             try:
                 outcome = self.game_client.run_weekly(timeout=remaining)
                 if outcome.completed is True:
-                    if week_start(self.clock()) != start:
-                        return "任务执行跨过周一 04:00，本次未计为该周成功"
+                    if week_start(self.clock(), self.server_tz) != start:
+                        return f"任务执行跨过 {self.server} 服务器周一 04:00，本次未计为该周成功"
                     if outcome.task_error:
                         console_print(f"Garden 已确认完成，保留上游报错供排查: {outcome.task_error}")
                     return None
@@ -168,8 +176,12 @@ class WeeklyRunner:
             return
         result.status = "failure"
         result.error = row["error"] or "本周到通知日仍没有成功记录"
-        result.decision = f"周常失败：{row['week']} 起的这一周；通知日起 {row['deadline']}（北京时间）"
-        result.ended_at = self.clock().astimezone(BEIJING_TZ)
+        start = dt.datetime.fromisoformat(row["week"]).astimezone(self.server_tz)
+        result.decision = (
+            f"周常失败：{start.date().isoformat()} 起的这一周（{self.server}）；"
+            f"通知日起 {row['deadline']}（服务器时间）"
+        )
+        result.ended_at = self.clock().astimezone(self.server_tz)
         if row["finalized"]:
             return
         notice = self.config.notice
@@ -181,4 +193,4 @@ class WeeklyRunner:
                 # Leave delivery pending for the next invocation.
                 result.error += f"；wxPusher 通知失败: {exc}"
                 return
-        db.execute("UPDATE weeks SET finalized = 1 WHERE week = ?", (row["week"],))
+        db.execute("UPDATE weeks SET finalized = 1 WHERE server = ? AND week = ?", (self.server, row["week"]))

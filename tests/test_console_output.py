@@ -28,7 +28,7 @@ class ConsoleOutputTest(unittest.TestCase):
             for completed in (True, False):
                 with self.subTest(encoding=encoding, completed=completed), tempfile.TemporaryDirectory() as folder:
                     root = Path(folder)
-                    config = AppConfig(root, root / "账号.env", retry=RetryConfig(1, 0),
+                    config = AppConfig(root, root / "账号.env", game_server="CN", retry=RetryConfig(1, 0),
                                        weekly_run=WeeklyRunConfig(notice_day=1))
                     game = Mock()
                     game.run_weekly.return_value = WeeklyGameOutcome(completed, "奖励读取失败😀")

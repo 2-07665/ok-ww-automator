@@ -109,7 +109,7 @@ class WeeklyRunnerTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         root = Path(self.tmp.name)
         self.config = AppConfig(
-            root, root / "env" / "cn.env",
+            root, root / "env" / "cn.env", game_server="CN",
             weekly_run=WeeklyRunConfig(notice_day=5),
             retry=RetryConfig(2, 0),
             notice=NoticeConfig(enabled=True, channels=("wxpusher",), wxpusher_spt="test"),
@@ -252,11 +252,11 @@ class WeeklyRunnerTest(unittest.TestCase):
 
     def test_reset_boundary_and_notice_day(self):
         before = dt.datetime(2026, 10, 5, 3, 59, tzinfo=BEIJING_TZ)
-        self.assertEqual(week_start(before).date().isoformat(), "2026-09-28")
-        self.assertEqual(week_start(before + dt.timedelta(minutes=1)).date().isoformat(), "2026-10-05")
-        self.assertEqual(week_start(before.astimezone(dt.timezone.utc)), week_start(before))
-        self.assertEqual(weekly_notice_start(week_start(before), 5), dt.datetime(2026, 10, 2, tzinfo=BEIJING_TZ))
-        self.assertEqual(weekly_notice_start(week_start(before), 1), week_start(before))
+        self.assertEqual(week_start(before, BEIJING_TZ).date().isoformat(), "2026-09-28")
+        self.assertEqual(week_start(before + dt.timedelta(minutes=1), BEIJING_TZ).date().isoformat(), "2026-10-05")
+        self.assertEqual(week_start(before.astimezone(dt.timezone.utc), BEIJING_TZ), week_start(before, BEIJING_TZ))
+        self.assertEqual(weekly_notice_start(week_start(before, BEIJING_TZ), 5), dt.datetime(2026, 10, 2, tzinfo=BEIJING_TZ))
+        self.assertEqual(weekly_notice_start(week_start(before, BEIJING_TZ), 1), week_start(before, BEIJING_TZ))
         self.game.run_weekly.return_value = WeeklyGameOutcome(completed=True)
         self.run_at("2026-09-28T05:00")
         self.run_at("2026-10-05T03:59")

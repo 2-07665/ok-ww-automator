@@ -10,7 +10,7 @@ The normal update step fetches OK-WW, merges `origin/master` with `--ff-only`, a
 
 Import the appropriate `windows/*_task.xml` in Windows Task Scheduler. Set the Python executable, working directory, logged-in user, highest privileges and desired trigger. The weekly and combined templates start disabled. Enable one appropriate stamina trigger, not both stamina templates.
 
-Windows triggers use system-local time. Stamina predictions use `DAILY_HOUR`/`DAILY_MINUTE` in Beijing time (UTC+8); these settings do not create Windows triggers. Weekly rules also use Beijing time. Reports use local timestamps. Keep the game desktop accessible during runs.
+Windows triggers use system-local time. Stamina predictions use `DAILY_HOUR`/`DAILY_MINUTE` in Beijing time (UTC+8); these settings do not create Windows triggers. Weekly rules and weekly report timestamps use the configured server clock; daily/stamina reports use local timestamps. Keep the game desktop accessible during runs.
 
 ## Daily and stamina
 
@@ -33,6 +33,7 @@ Game attempts close known Wuthering Waves processes before launch and after comp
 Weekly mode does not use Sheets, Waves API, Mailgun or Healthchecks. Configure each env profile:
 
 ```dotenv
+GAME_SERVER=CN
 WEEKLY_RUN_DAYS=1,3,5
 WEEKLY_NOTICE_DAY=5
 NOTICE_ENABLED=true
@@ -40,11 +41,15 @@ NOTICE_CHANNEL=wxpusher
 WXPUSHER_SPT=...
 ```
 
-Weekdays are 1=Monday through 7=Sunday; blank run days means every day. Weeks reset Monday at 04:00 Beijing time. A scheduled invocation runs only on an allowed day and skips weeks already marked successful, including the update step. Upstream completion is an error-free finish or the current Garden task's exact completion message. At most two attempts run, bounded by the configured retry count and one shared 40-minute budget for updates, game work and retry delays. Forced cleanup and notification may take extra time.
+Server clocks use fixed offsets with no daylight saving: `CN`/`ASIA`/`SEA`/`HMT` use UTC+8, `US` uses UTC−5, and `EU` uses UTC+1. US reset is therefore Monday 09:00 UTC: 05:00 EDT or 04:00 EST. Missing or invalid `GAME_SERVER` prevents weekly execution; profile filenames and notice labels do not select the server.
 
-On or after the notice day, an incomplete week triggers a WxPusher failure notice. Allowed days try Garden first; excluded days can still send a notice. Delivery is recorded once per week, and failed delivery can retry. Notifications require an invocation: schedule a trigger on or after the notice day. A previously recorded unfinished week can be reported after reset; an unobserved week has no record.
+For example, with `WEEKLY_NOTICE_DAY=6` and a daily 17:00 EDT trigger, an incomplete CN week can notify on Friday, while US can notify on Saturday. Changing this setting does not change the Windows trigger or the Beijing-time daily/stamina prediction target.
 
-Local state lives in `.state/weekly/`, keyed by absolute env path. Renaming profiles or deleting state loses deduplication. Concurrent weekly requests for the same profile skip while its lock is held.
+Weekdays are 1=Monday through 7=Sunday; blank run days means every day. Weeks reset Monday at 04:00 on the configured server clock. Allowed weekdays are server calendar days, so a Monday invocation before reset still belongs to the preceding week. A scheduled invocation runs only on an allowed day and skips weeks already marked successful, including the update step. Upstream completion is an error-free finish or the current Garden task's exact completion message. At most two attempts run, bounded by the configured retry count and one shared 40-minute budget for updates, game work and retry delays. Forced cleanup and notification may take extra time.
+
+From midnight on the server notice day (Monday is clamped to the 04:00 reset), an incomplete week becomes eligible for a WxPusher failure notice at the next invocation. Allowed days try Garden first; excluded days can still send a notice. Delivery is recorded once per week, and failed delivery can retry. Notifications require an invocation: schedule a trigger on or after the notice day. A previously recorded unfinished week can be reported after reset; an unobserved week has no record.
+
+Local state lives in `.state/weekly/`, keyed by absolute env path. Each record identifies the server and reset instant in UTC, and successful runs store their completion time in UTC. Clear legacy weekly databases when installing this update; the previous schema is not migrated. Renaming profiles or deleting state loses deduplication. Concurrent weekly requests for the same profile skip while its lock is held.
 
 `--mode weekly --run-now`, also used by the launcher's **Weekly Garden**, ignores run-day and success skips. Manual success updates the record; manual failure preserves an earlier success. Standalone weekly never requests PC shutdown.
 

@@ -19,7 +19,7 @@ An attached log is useful, but normally the deployed machine already has the evi
 | Sheets `DailyRuns` / `StaminaRuns` | Short final reports: status, metrics, decision, error and start/end time. Names and spreadsheet IDs come from each profile. |
 | `.state/weekly/*.sqlite3` | Weekly completion/notification state, keyed by the absolute env path. Weekly does not write DailyRuns/StaminaRuns. Inspect an existing database read-only rather than invoking the runner. |
 
-For “today,” use the deployed machine's local date. Logs and report timestamps use local wall time; report cells have no UTC offset. Daily schedule calculations and weekly resets use Beijing time instead. Check the timestamps inside a file: an unrotated current log can contain an earlier date, and a run crossing midnight may span files. If retained logs don't cover the incident, say what is missing rather than interpreting silence as success.
+For “today,” use the deployed machine's local date. Logs and daily/stamina report timestamps use local wall time; report cells have no UTC offset. Daily schedule calculations use Beijing time. Weekly resets, run days, notices and weekly report timestamps use the account's GAME_SERVER fixed-offset clock; weekly database keys and completion timestamps use UTC. Check the timestamps inside a file: an unrotated current log can contain an earlier date, and a run crossing midnight may span files. If retained logs don't cover the incident, say what is missing rather than interpreting silence as success.
 
 ### Recent Sheets results
 
@@ -68,7 +68,7 @@ Paths below are under `src/ok_ww_automator/`:
 | Scheduling/accounts | `scheduler.py`, `env_discovery.py`, `config.py`: profiles, job ordering, update preparation and deferred shutdown. |
 | Final decisions/reports | `runners.py`, `models.py`, `sheets.py`, `notices.py`, `healthchecks.py`: status decisions, retry metrics and finalization. |
 | Game boundary | `game_clients.py` → `game_attempt.py` child processes → `ok_launcher.py` and upstream tasks. Attempt JSON is temporary, not a durable incident archive. |
-| Weekly behavior | `weekly.py`: Beijing-week state, deduplication, bounded retries and failure notices. Renaming an env file changes its state identity. |
+| Weekly behavior | `weekly.py`: server-week state selected by GAME_SERVER, deduplication, bounded retries and failure notices. Renaming an env file changes its state identity. |
 | Launcher/custom tasks | `windows_launcher.py`, `launcher_ui.py`, `auto_farm.py`, `ok_tasks/`: launcher subprocesses and custom game interaction. |
 
 Some important distinctions when assessing a fix:

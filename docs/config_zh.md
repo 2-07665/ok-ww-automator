@@ -6,18 +6,19 @@
 
 单独使用配置或 Sheets CLI 时，默认文件为 `env/.env`；`ENV_FILE=cn.env` 会解析为 `env/cn.env`。调度器通过 `--account cn` 选择配置。值保留中文，不展开 shell 变量。双引号内会解析 `\n`、`\r`、`\t` 等转义。Windows 路径请用单引号、不加引号或使用正斜杠，例如 `GAME_EXE_PATH='D:\new\tools\Game.exe'`。
 
-日常/体力需要 Sheets 凭据，游戏尝试需要 `GAME_EXE_PATH`。周常仅需要游戏及可选 WxPusher 配置。Waves API、通知和 Healthchecks 启用时才需要其对应凭据；Healthchecks 需要日常和体力两个 UUID。
+日常/体力需要 Sheets 凭据，游戏尝试需要 `GAME_EXE_PATH`。周常需要 `GAME_SERVER`、游戏及可选 WxPusher 配置。Waves API、通知和 Healthchecks 启用时才需要其对应凭据；Healthchecks 需要日常和体力两个 UUID。
 
 ## 环境变量
 
 | 变量 | 默认值 | 描述 |
 | --- | --- | --- |
 | `ENV_FILE` | `env/.env` | dotenv 文件的路径。 |
+| `GAME_SERVER` | *未设置* | 周常必填：`CN`、`US`、`EU`、`ASIA`、`SEA`、`HMT`，不区分大小写。每个账号单独配置，不根据文件名推断。 |
 | `GAME_EXE_PATH` | *未设置* | `Wuthering Waves.exe` 的绝对路径。 |
 | `DAILY_HOUR` | `5` | 预期的日常任务运行小时 (0-23, UTC+8)。用于体力计算。 |
 | `DAILY_MINUTE` | `0` | 预期的日常任务运行分钟 (0-59)。 |
-| `WEEKLY_RUN_DAYS` | `1,2,3,4,5,6,7` | 每账号允许执行周常的北京时间自然日，1=周一至7=周日，例如 `1,3,5`；未设置或留空表示每天。手动周常忽略此限制。 |
-| `WEEKLY_NOTICE_DAY` | `7` | 周常未成功的通知日（北京时间），1=周一至7=周日。当日或之后触发时，本周未完成就通知，非执行日也检查。 |
+| `WEEKLY_RUN_DAYS` | `1,2,3,4,5,6,7` | 每账号允许执行周常的服务器时间自然日，1=周一至7=周日，例如 `1,3,5`；未设置或留空表示每天。手动周常忽略此限制。 |
+| `WEEKLY_NOTICE_DAY` | `7` | 周常未成功的通知日（服务器时间），1=周一至7=周日。当日或之后触发时，本周未完成就通知，非执行日也检查。 |
 | `GOOGLE_SHEET_ID` | *未设置* | 目标 Google Spreadsheet ID。 |
 | `GOOGLE_SERVICE_ACCOUNT_JSON_BASE64` | *未设置* | Base64 编码的 Service Account JSON 凭据。 |
 | `SHEET_NAME_CONFIG` | `Config` | 配置工作表的名称。 |
@@ -45,4 +46,4 @@
 
 布尔值接受 `true/false`、`1/0`、`yes/no`、`on/off`、`是/否`，忽略英文大小写。
 
-`DAILY_HOUR`/`DAILY_MINUTE` 仅供北京时间体力预测；Windows 触发器使用系统本地时间。周常以北京时间周一 04:00 重置，执行日和通知日详见[运行说明](operations_zh.md#周常乐园)。
+`DAILY_HOUR`/`DAILY_MINUTE` 仅供北京时间体力预测；Windows 触发器使用系统本地时间。周常以所配置服务器时间周一 04:00 重置，执行日和通知日详见[运行说明](operations_zh.md#周常乐园)。
