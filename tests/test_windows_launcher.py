@@ -194,7 +194,10 @@ class LauncherCommandTest(unittest.TestCase):
         launch_game(launch, popen=popen, platform_name="nt")
 
         popen.assert_called_once()
-        self.assertEqual(popen.call_args.args[0], [str(launch.executable)])
+        self.assertEqual(
+            popen.call_args.args[0],
+            [str(launch.executable), "Client", "-krqlv=hd", "-SkipSplash"],
+        )
         self.assertEqual(popen.call_args.kwargs["cwd"], str(launch.executable.parent))
         self.assertIs(popen.call_args.kwargs["stdout"], __import__("subprocess").DEVNULL)
         self.assertIs(popen.call_args.kwargs["stderr"], __import__("subprocess").DEVNULL)

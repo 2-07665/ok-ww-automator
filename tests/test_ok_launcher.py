@@ -184,14 +184,17 @@ class OkLauncherTest(unittest.TestCase):
         )
 
         with patch("ok_ww_automator.ok_launcher.load_runtime_imports") as load_imports:
-            def launch(path: str) -> None:
-                launches.append(path)
+            def launch(path: str, arguments: str) -> None:
+                launches.append((path, arguments))
                 device_manager.preferred = {"connected": True}
 
             load_imports.return_value.process_execute = launch
             launcher.ensure_game_ready(ok)
 
-        self.assertEqual(launches, [str(Path("/game/Wuthering Waves.exe"))])
+        self.assertEqual(
+            launches,
+            [(str(Path("/game/Wuthering Waves.exe")), "Client -krqlv=hd -SkipSplash")],
+        )
         self.assertTrue(ok.task_executor.started)
         self.assertNotIn(2, clock.sleeps)
 
