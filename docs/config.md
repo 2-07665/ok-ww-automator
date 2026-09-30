@@ -37,7 +37,7 @@ Automation and the launcher's Launch Game action use `Client -krqlv=<quality> -S
 | `NOTICE_ENABLED` | `false` | Enable post-run notifications. |
 | `NOTICE_CHANNEL` | *unset* | Comma-separated list of channels (`mailgun`, `wxpusher`). |
 | `NOTICE_ACCOUNT_ID` | *unset* | Display label prefixed to notice subjects. |
-| `NOTICE_SKIP_SUCCESS` | `false` | Suppress notifications when the final task result is `success`. |
+| `NOTICE_SKIP_SUCCESS` | `false` | Suppress notifications when the final task result is `success` or `skipped`. |
 | `MAILGUN_API_KEY` | *unset* | Mailgun API key. |
 | `MAILGUN_DOMAIN` | *unset* | Mailgun sending domain. |
 | `MAILGUN_RECIPIENT` | *unset* | Target email address for notices. |

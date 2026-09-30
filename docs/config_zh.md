@@ -37,7 +37,7 @@
 | `NOTICE_ENABLED` | `false` | 启用运行后通知。 |
 | `NOTICE_CHANNEL` | *未设置* | 逗号分隔的通知渠道列表 (`mailgun`, `wxpusher`)。 |
 | `NOTICE_ACCOUNT_ID` | *未设置* | 通知主题前缀的显示标签。 |
-| `NOTICE_SKIP_SUCCESS` | `false` | 当最终任务结果为 `success` 时跳过通知。 |
+| `NOTICE_SKIP_SUCCESS` | `false` | 当最终任务结果为 `success` 或 `skipped` 时跳过通知。 |
 | `MAILGUN_API_KEY` | *未设置* | Mailgun API 密钥。 |
 | `MAILGUN_DOMAIN` | *未设置* | Mailgun 发送域名。 |
 | `MAILGUN_RECIPIENT` | *未设置* | 接收通知的目标邮箱地址。 |

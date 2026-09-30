@@ -22,7 +22,7 @@ Windows 触发时刻使用系统本地时间；体力预测的 `DAILY_HOUR`/`DAI
 
 Config 读取失败时，当前行为是使用默认配置，并把读取错误记入决策说明。默认启用日常/体力、选择无音区 #1、关闭关机；缺失凭据仍会阻止 Sheets 客户端初始化。日志写入或通知发送失败会尽可能记录，远端日志不可用时请查看本地输出。
 
-最终状态包括 `success`、`skipped`、`needs review`、`failure`。Healthchecks 将 success/skipped 视为正常，needs-review/failure 视为失败。Mailgun/WxPusher 接收最终报告，`NOTICE_SKIP_SUCCESS` 仅抑制成功报告。凭据和通知配置见[配置说明](config_zh.md)。
+最终状态包括 `success`、`skipped`、`needs review`、`failure`。Healthchecks 将 success/skipped 视为正常，needs-review/failure 视为失败。Mailgun/WxPusher 接收最终报告，`NOTICE_SKIP_SUCCESS` 抑制成功和跳过报告。凭据和通知配置见[配置说明](config_zh.md)。
 
 每次尝试使用独立游戏子进程，包含启动及退出的总时限为：日常 40 分钟、体力刷取 20 分钟、体力读取 15 分钟；任务执行本身的限制为日常 30 分钟、体力 10 分钟。运行器通过 `RETRY_MAX_ATTEMPTS` 和 `RETRY_DELAY_SECONDS` 控制重试。
 

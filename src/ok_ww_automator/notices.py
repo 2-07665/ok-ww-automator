@@ -136,7 +136,7 @@ def should_notify(result: RunResult, *, skip_success: bool = False) -> bool:
     normalized_status = result.status.strip().lower()
     if normalized_status in NO_NOTICE_STATUSES:
         return False
-    if skip_success and normalized_status == "success":
+    if skip_success and normalized_status in {"success", "skipped"}:
         return False
     return True
 

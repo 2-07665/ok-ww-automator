@@ -22,7 +22,7 @@ Stamina checks Waves API first, falling back to a separate game/OCR attempt if u
 
 If a Config read fails, current behavior uses default settings and records the read error in the decision text. Defaults enable daily/stamina, select Tacet #1 and disable shutdown. Missing credentials still prevent construction of the Sheets client. Result-log or notification delivery failures are recorded where possible; check the local output if the remote log is unavailable.
 
-Final states are `success`, `skipped`, `needs review` and `failure`. Healthchecks treats success/skipped as healthy and needs-review/failure as failed. Mailgun/WxPusher receive final reports; `NOTICE_SKIP_SUCCESS` suppresses only success reports. API credentials and notification setup are in [configuration](config.md).
+Final states are `success`, `skipped`, `needs review` and `failure`. Healthchecks treats success/skipped as healthy and needs-review/failure as failed. Mailgun/WxPusher receive final reports; `NOTICE_SKIP_SUCCESS` suppresses success and skipped reports. API credentials and notification setup are in [configuration](config.md).
 
 Each attempt gets a fresh game subprocess. The whole child is limited to 40 minutes for daily, 20 for stamina farming, and 15 for a stamina read, including launch and teardown. Task execution itself has a 30-minute daily or 10-minute stamina limit. `RETRY_MAX_ATTEMPTS` and `RETRY_DELAY_SECONDS` govern runner retries.
 
