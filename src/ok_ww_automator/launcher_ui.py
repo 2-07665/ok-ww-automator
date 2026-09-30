@@ -337,7 +337,9 @@ class LauncherWindow(FluentWindow):
         except (ValueError, OSError) as exc:
             self._warn(str(exc))
             return
-        self.scheduler_status.setText(f"已启动游戏：{launch.account_id}")
+        message = f"已启动游戏：{launch.account_id}（{launch.resource_quality.upper()}）"
+        self.scheduler_status.setText(message)
+        self._append_log(message)
         self._game_launch_cooldown = True
         self._sync_controls()
         QTimer.singleShot(GAME_LAUNCH_COOLDOWN_MS, self._finish_game_launch_cooldown)

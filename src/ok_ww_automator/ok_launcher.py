@@ -8,11 +8,13 @@ import importlib
 import os
 from pathlib import Path
 import sys
+import subprocess
 import time
 from typing import Any, Callable, Iterator, Protocol
 
 from .config import AppConfig
 from .farm_progress import FarmProgress
+from .game_launch import game_launch_arguments
 
 
 class OkLaunchError(RuntimeError):
@@ -57,13 +59,14 @@ class OkLaunchOptions:
     ready_poll_seconds: float = 5.0
     start_attempts: int = 2
     restart_settle_seconds: float = 10.0
+    game_resource_quality: str = "hd"
 
 
 @dataclass(frozen=True)
 class RuntimeImports:
     ok_class: type
     config: dict[str, Any]
-    process_execute: Callable[[str], Any]
+    process_execute: Callable[..., Any]
 
 
 class OkLauncher:
@@ -84,6 +87,7 @@ class OkLauncher:
             OkLaunchOptions(
                 ww_root=ww_root,
                 game_exe_path=app_config.require_game_exe_path(),
+                game_resource_quality=app_config.game_resource_quality,
             )
         )
 
@@ -127,7 +131,10 @@ class OkLauncher:
 
         if not preferred or not preferred.get("connected"):
             imports = load_runtime_imports(self.options.ww_root)
-            imports.process_execute(str(self.options.game_exe_path))
+            arguments = game_launch_arguments(self.options.game_resource_quality)
+            imports.process_execute(
+                str(self.options.game_exe_path), arguments=subprocess.list2cmdline(arguments)
+            )
             self.wait_for_game_window(ok)
 
         self.refresh_until_ready(ok)

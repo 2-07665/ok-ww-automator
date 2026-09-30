@@ -159,6 +159,7 @@ class AppConfig:
     healthchecks: HealthchecksConfig = field(default_factory=HealthchecksConfig)
     weekly_run: WeeklyRunConfig = field(default_factory=WeeklyRunConfig)
     game_server: str | None = None
+    game_resource_quality: str = "hd"
 
     def require_game_server(self) -> str:
         server = _game_server(self.game_server)
@@ -170,6 +171,13 @@ class AppConfig:
         if self.game_exe_path is None:
             raise ConfigError("Missing game config: GAME_EXE_PATH")
         return self.game_exe_path
+
+
+def normalize_game_resource_quality(value: str | None) -> str:
+    quality = "hd" if value is None else value.strip().lower()
+    if quality not in {"sd", "hd", "uhd"}:
+        raise ConfigError("GAME_RESOURCE_QUALITY must be sd, hd, or uhd")
+    return quality
 
 
 def load_config(
@@ -194,6 +202,7 @@ def load_config(
         project_root=root,
         env_path=resolved_env_path,
         game_exe_path=_path_or_none(values.get("GAME_EXE_PATH")),
+        game_resource_quality=normalize_game_resource_quality(values.get("GAME_RESOURCE_QUALITY")),
         game_server=_game_server(values.get("GAME_SERVER")),
         daily_run_time=DailyRunTimeConfig(
             hour=_int_value(values, "DAILY_HOUR", 5, minimum=0, maximum=23),

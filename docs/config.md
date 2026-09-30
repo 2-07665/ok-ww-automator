@@ -10,11 +10,14 @@ Daily/stamina require Sheets credentials, and game attempts require `GAME_EXE_PA
 
 ## Environment variables
 
+Automation and the launcher's Launch Game action use `Client -krqlv=<quality> -SkipSplash`. Match the quality to the installed resources: selecting an uninstalled mode can automatically download several GB, without falling back to HD. Omitted quality defaults to HD. Both launch paths allow process environment overrides for this setting.
+
 | Variable | Default | Description |
 | --- | --- | --- |
 | `ENV_FILE` | `env/.env` | Path to the dotenv file. |
 | `GAME_SERVER` | *unset* | Required for weekly mode: `CN`, `US`, `EU`, `ASIA`, `SEA`, `HMT` (case-insensitive). Set per account; never inferred from filenames. |
 | `GAME_EXE_PATH` | *unset* | Absolute path to `Wuthering Waves.exe`. |
+| `GAME_RESOURCE_QUALITY` | `hd` | Resource mode: `sd` (流畅), `hd` (高清), or `uhd` (极致). Ignores case and surrounding whitespace; blank/invalid values are rejected. |
 | `DAILY_HOUR` | `5` | Assumed daily task run hour (0-23, UTC+8). Used for stamina calculations. |
 | `DAILY_MINUTE` | `0` | Assumed daily task run minute (0-59). |
 | `WEEKLY_RUN_DAYS` | `1,2,3,4,5,6,7` | Allowed server calendar weekdays per account, e.g. `1,3,5`. Omitted/blank allows every day. Manual weekly runs ignore this filter. |

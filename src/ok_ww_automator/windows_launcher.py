@@ -13,7 +13,8 @@ import sys
 import threading
 from typing import Callable, Iterable, Sequence
 
-from .config import ConfigError, read_dotenv
+from .config import ConfigError, normalize_game_resource_quality, read_dotenv
+from .game_launch import game_launch_arguments
 from .env_discovery import AccountEnv
 from .farm_progress import FarmProgress, read_progress
 from .time_utils import parse_time_of_day
@@ -54,6 +55,7 @@ class ProcessEvent:
 class GameLaunch:
     account_id: str
     executable: Path
+    resource_quality: str = "hd"
 
 
 def is_automator_root(path: Path) -> bool:
@@ -173,7 +175,11 @@ def build_game_launch(accounts: Sequence[AccountEnv], selected_ids: Iterable[str
     account_id = ordered_ids[0]
     account = by_id[account_id]
     try:
-        raw_path = read_dotenv(account.path).get("GAME_EXE_PATH", "").strip()
+        values = read_dotenv(account.path)
+        raw_path = values.get("GAME_EXE_PATH", "").strip()
+        quality = normalize_game_resource_quality(
+            os.environ.get("GAME_RESOURCE_QUALITY", values.get("GAME_RESOURCE_QUALITY"))
+        )
     except (ConfigError, OSError, UnicodeError) as exc:
         raise ValueError(f"Account {account_id}: {exc}") from exc
     if not raw_path:
@@ -181,7 +187,7 @@ def build_game_launch(accounts: Sequence[AccountEnv], selected_ids: Iterable[str
     executable = Path(raw_path).expanduser()
     if not executable.is_file():
         raise ValueError(f"Account {account_id}: game executable not found: {executable}")
-    return GameLaunch(account_id=account_id, executable=executable.resolve())
+    return GameLaunch(account_id=account_id, executable=executable.resolve(), resource_quality=quality)
 
 
 def launch_game(
@@ -192,6 +198,7 @@ def launch_game(
     dll_directory_setter: Callable[[str | None], None] | None = None,
 ) -> None:
     """Start one game directly and deliberately relinquish process ownership."""
+    command = [str(launch.executable), *game_launch_arguments(launch.resource_quality)]
     restore_dll_directory: str | None = None
     if platform_name == "nt" and getattr(sys, "frozen", False):
         # PyInstaller one-file sets this to _MEIPASS. Do not let an independent
@@ -202,7 +209,7 @@ def launch_game(
         dll_directory_setter(None)
     try:
         popen(
-            [str(launch.executable)],
+            command,
             cwd=str(launch.executable.parent),
             env=external_process_environment(platform_name),
             stdin=subprocess.DEVNULL,
