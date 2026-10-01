@@ -759,6 +759,52 @@ class DailyRunnerTest(unittest.TestCase):
 
 
 class StaminaRunnerTest(unittest.TestCase):
+    def test_recovered_read_timeout_can_skip_without_failure_notice(self):
+        store = FakeStore()
+        game = Mock()
+        game.read_stamina.side_effect = [subprocess.TimeoutExpired("stamina read", 900), (17, 29)]
+        notice = FakeNoticeClient()
+        healthcheck = FakeHealthcheckMonitor()
+        observed = dt.datetime(2026, 10, 2, 7, 23, 25, tzinfo=BEIJING_TZ)
+        with patch("ok_ww_automator.runners.now", return_value=observed):
+            result = StaminaRunner(
+                store=store, game_client=game, retry_config=RetryConfig(2, 0),
+                sleep=lambda _: None, daily_hour=5, daily_minute=30,
+                notice_client=notice, skip_success_notice=True,
+                healthcheck_monitor=healthcheck,
+            ).run()
+
+        self.assertEqual(result.status, "skipped")
+        self.assertIsNone(result.error)
+        self.assertEqual((result.stamina_left, result.backup_stamina_left, result.stamina_used), (17, 29, 0))
+        self.assertIn("timed out after 900 seconds", result.decision)
+        self.assertEqual(game.read_stamina.call_count, 2)
+        game.run_stamina.assert_not_called()
+        self.assertEqual(store.stamina_results, [result])
+        self.assertEqual(healthcheck.calls[-1], ("complete", "skipped"))
+        self.assertEqual(notice.calls, [])
+
+    def test_recovered_read_does_not_hide_an_earlier_farming_failure(self):
+        for raises in (False, True):
+            with self.subTest(raises=raises):
+                game = Mock()
+                game.read_stamina.side_effect = [(240, 0), RuntimeError("cannot read"), (60, 0)]
+                if raises:
+                    game.run_stamina.side_effect = RuntimeError("reward collection failed")
+                else:
+                    game.run_stamina.return_value = StaminaGameOutcome(60, 0, "reward collection failed")
+                with patch("ok_ww_automator.runners.now", return_value=dt.datetime(2026, 5, 16, 4, tzinfo=BEIJING_TZ)):
+                    result = StaminaRunner(
+                        store=FakeStore(), game_client=game, retry_config=RetryConfig(3, 0),
+                        sleep=lambda _: None,
+                    ).run()
+
+                self.assertEqual(result.status, "needs review")
+                self.assertEqual(result.error, "reward collection failed")
+                self.assertEqual((result.stamina_start, result.stamina_left, result.stamina_used), (240, 60, 180))
+                self.assertIn("cannot read", result.decision)
+                game.run_stamina.assert_called_once()
+
     def test_partial_burn_then_no_burn_retains_consumption_and_failed_outcome(self):
         game = Mock()
         game.read_stamina.side_effect = [(240, 0), (60, 0)]

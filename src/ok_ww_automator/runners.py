@@ -397,9 +397,10 @@ class StaminaRunner:
         expected_burn = 0
         exact_expected = True
         has_initial_stamina = False
-        previous_error: str | None = None
+        previous_farm_error: str | None = None
         last_outcome = StaminaGameOutcome(task_error="Stamina task did not run")
         for attempt in range(1, self.retry_config.max_attempts + 1):
+            farming_started = False
             try:
                 stamina, backup_stamina = self.read_stamina(sheet_config)
                 if not has_initial_stamina and stamina is not None:
@@ -419,16 +420,20 @@ class StaminaRunner:
 
                 if not decision.should_run:
                     apply_stamina_no_run(result, decision.is_expected)
-                    if previous_error is not None:
+                    # A successful read recovers a read failure, but cannot
+                    # establish that an earlier farming attempt completed safely.
+                    if previous_farm_error is not None:
                         result.status = RUN_STATUS_NEEDS_REVIEW
-                        result.error = previous_error
+                        result.error = previous_farm_error
                     return None, decision.burn_amount, decision.is_expected
 
                 expected_burn = (result.stamina_used or 0) + decision.burn_amount
                 exact_expected = exact_expected and decision.is_expected
+                farming_started = True
                 outcome = self.game_client.run_stamina(sheet_config)
             except Exception as exc:
-                previous_error = str(exc)
+                if farming_started:
+                    previous_farm_error = str(exc).strip() or type(exc).__name__
                 cleanup(result, "游戏", lambda: self.game_client.close(sheet_config))
                 if attempt >= self.retry_config.max_attempts:
                     raise
@@ -441,7 +446,7 @@ class StaminaRunner:
             last_outcome = outcome
             if not outcome.task_error or attempt >= self.retry_config.max_attempts:
                 return outcome, expected_burn, exact_expected
-            previous_error = outcome.task_error
+            previous_farm_error = outcome.task_error
             cleanup(result, "游戏", lambda: self.game_client.close(sheet_config))
             append_retry_decision(result, attempt, outcome.task_error)
             self.sleep(self.retry_config.delay_seconds)
