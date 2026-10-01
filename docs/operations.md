@@ -26,6 +26,8 @@ Final states are `success`, `skipped`, `needs review` and `failure`. Healthcheck
 
 Each attempt gets a fresh game subprocess. The whole child is limited to 40 minutes for daily, 20 for stamina farming, and 15 for a stamina read, including launch and teardown. Task execution itself has a 30-minute daily or 10-minute stamina limit. `RETRY_MAX_ATTEMPTS` and `RETRY_DELAY_SECONDS` govern runner retries.
 
+Exceptions escaping the task's `run()` remain task errors even when their message is empty; the exception class name is used in that case. They follow the existing retry limits. Upstream cancellation/finish signals are excluded from this tracking, and internally recovered exceptions and diagnostic logs retain the existing error policy.
+
 Game attempts close known Wuthering Waves processes before launch and after completion. They override upstream **Exit After Task** so post-run OCR completes before cleanup. Sheet shutdown flags remain authoritative, including skipped/failed runs. For multiple accounts, shutdown is deferred until all selected jobs finish; one request is enough for final shutdown.
 
 ## Weekly Garden

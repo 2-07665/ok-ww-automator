@@ -1,6 +1,7 @@
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
@@ -16,6 +17,18 @@ from ok_ww_automator.ok_launcher import (
     run_onetime_task,
     ww_runtime_context,
 )
+from ok_ww_automator.config import RetryConfig
+from ok_ww_automator.game_clients import DailyGameOutcome, normalize_daily_task_error
+from ok_ww_automator.models import SheetRunConfig
+from ok_ww_automator.runners import DailyRunner
+
+
+class TaskDisabledException(Exception):
+    pass
+
+
+class FinishedException(Exception):
+    pass
 
 
 class FakeCapture:
@@ -107,10 +120,45 @@ class FakeTask:
     def unpause(self) -> None:
         self.unpause_count += 1
 
+    def run(self):
+        pass
+
     def info_get(self, key, default=None):
         if key in {"Error", "error"}:
             return self.error
         return default
+
+
+class ExecutedTask(FakeTask):
+    """Emulate executor handling, including its lossy str(exc) error field."""
+
+    def __init__(self, executor, action):
+        super().__init__()
+        self.executor = executor
+        self.action = action
+        self.caught = None
+
+    def enable(self):
+        super().enable()
+        self.enabled = True
+        self.error = None
+
+    def unpause(self):
+        super().unpause()
+        self.executor.current_task = self
+        try:
+            self.run()
+        except (TaskDisabledException, FinishedException) as exc:
+            self.caught = exc
+        except Exception as exc:
+            self.caught = exc
+            self.error = str(exc)
+        finally:
+            self.enabled = False
+            self.executor.current_task = None
+
+    def run(self):
+        return self.action(self)
 
 
 class Clock:
@@ -128,6 +176,12 @@ class Clock:
 
 
 class OkLauncherTest(unittest.TestCase):
+    def setUp(self):
+        # Core tests must not import or start the real upstream runtime.
+        self.enterContext(patch.dict(sys.modules, {"ok.task.exceptions": SimpleNamespace(
+            TaskDisabledException=TaskDisabledException, FinishedException=FinishedException,
+        )}))
+
     def test_is_ok_ready_requires_device_capture_and_interaction(self) -> None:
         ready = FakeOk(FakeDeviceManager({"connected": True}, FakeCapture(True), object()))
         no_capture = FakeOk(FakeDeviceManager({"connected": True}, None, object()))
@@ -346,6 +400,110 @@ class OkLauncherTest(unittest.TestCase):
         self.assertEqual(task.enable_count, 1)
         self.assertEqual(task.unpause_count, 1)
 
+    def test_escaping_exceptions_preserve_failure_and_original_exception(self):
+        for exc in (Exception(), ValueError(), RuntimeError("   "), ValueError("bad state")):
+            with self.subTest(exception=repr(exc)):
+                def fail(task):
+                    raise exc
+
+                executor = FakeExecutor()
+                task = ExecutedTask(executor, fail)
+                error = run_onetime_task(executor, task)
+
+                self.assertEqual(error, f"Fake Task: {str(exc).strip() or type(exc).__name__}")
+                self.assertIs(task.caught, exc)
+                self.assertNotIn("run", task.__dict__)
+
+    def test_recovered_exceptions_and_empty_diagnostics_do_not_create_task_failure(self):
+        def recover(task):
+            try:
+                raise ValueError()
+            except ValueError:
+                task.error = ""  # A diagnostic entry alone is not an escaped exception.
+
+        executor = FakeExecutor()
+        task = ExecutedTask(executor, recover)
+        self.assertEqual(run_onetime_task(executor, task), "")
+        self.assertIsNone(task.caught)
+
+    def test_escaping_empty_exception_takes_precedence_over_benign_diagnostic(self):
+        def fail(task):
+            raise ValueError()
+
+        executor = FakeExecutor()
+        task = ExecutedTask(executor, fail)
+        # A translated executor error and an earlier English diagnostic can coexist.
+        task.tr = lambda key: "错误"
+        task.info_get = {"错误": "", "Error": "can not battle pass, maybe ended"}.get
+        error = normalize_daily_task_error(run_onetime_task(executor, task))
+        self.assertEqual(error, "Fake Task: ValueError")
+
+    def test_nonfatal_diagnostic_keeps_existing_battle_pass_policy(self):
+        executor = FakeExecutor()
+        task = ExecutedTask(executor, lambda task: setattr(task, "error", "can not battle pass, maybe ended"))
+        error = run_onetime_task(executor, task)
+        self.assertEqual(error, "Fake Task: can not battle pass, maybe ended")
+        self.assertIsNone(normalize_daily_task_error(error))
+
+    def test_control_flow_exceptions_do_not_create_task_failure(self):
+        for exc in (TaskDisabledException("stopped"), FinishedException("done")):
+            with self.subTest(exception=type(exc).__name__):
+                def stop(task):
+                    raise exc
+
+                executor = FakeExecutor()
+                task = ExecutedTask(executor, stop)
+                self.assertEqual(run_onetime_task(executor, task), "")
+                self.assertIs(task.caught, exc)
+                self.assertNotIn("run", task.__dict__)
+
+    def test_observer_restores_instance_override_even_when_polling_fails(self):
+        for fail_poll in (False, True):
+            with self.subTest(fail_poll=fail_poll):
+                executor = FakeExecutor()
+                task = ExecutedTask(executor, lambda task: None)
+                original = Mock()
+                task.run = original
+                poll = Mock(side_effect=RuntimeError("poll failed") if fail_poll else None)
+                if fail_poll:
+                    with self.assertRaisesRegex(RuntimeError, "poll failed"):
+                        run_onetime_task(executor, task, on_poll=poll)
+                else:
+                    self.assertEqual(run_onetime_task(executor, task, on_poll=poll), "")
+                self.assertIs(task.run, original)
+                original.assert_called_once_with()
+
+    def test_empty_exception_retries_through_daily_runner_and_reports_exhaustion(self):
+        for recover in (False, True):
+            with self.subTest(recover=recover):
+                attempts = []
+
+                def run_daily(config):
+                    def action(task):
+                        if not recover or not attempts:
+                            raise ValueError()
+
+                    executor = FakeExecutor()
+                    task = ExecutedTask(executor, action)
+                    error = normalize_daily_task_error(run_onetime_task(executor, task))
+                    attempts.append(task)
+                    # Even completed daily points must not mask an aborted task.
+                    return DailyGameOutcome(daily_points=140, task_error=error)
+
+                store = Mock()
+                store.fetch_run_config_or_default.return_value = (SheetRunConfig(), "")
+                game = Mock(run_daily=Mock(side_effect=run_daily))
+                sleeps = []
+                result = DailyRunner(store=store, game_client=game,
+                                     retry_config=RetryConfig(2, 4), sleep=sleeps.append).run()
+
+                self.assertEqual(len(attempts), 2)
+                self.assertEqual(sleeps, [4])
+                self.assertIn("Fake Task: ValueError", result.decision)
+                self.assertEqual(result.status, "success" if recover else "needs review")
+                self.assertEqual(result.error, None if recover else "Fake Task: ValueError")
+                store.append_daily_result.assert_called_once_with(result)
+
     def test_headless_completion_disables_saved_exit_preference_before_enabling(self):
         task = FakeTask(enabled=False)
         task.config["Exit After Task"] = True
@@ -374,6 +532,7 @@ class OkLauncherTest(unittest.TestCase):
                 sleep=clock.sleep,
                 monotonic=clock.monotonic,
             )
+        self.assertNotIn("run", task.__dict__)
 
     def test_run_onetime_task_fails_when_executor_exits(self) -> None:
         task = FakeTask(enabled=True)
@@ -381,6 +540,7 @@ class OkLauncherTest(unittest.TestCase):
 
         with self.assertRaisesRegex(OkLaunchError, "Executor exit event"):
             run_onetime_task(executor, task, sleep=lambda _: None)
+        self.assertNotIn("run", task.__dict__)
 
     def test_get_task_error_uses_headless_task_translation_and_english_fallback(self):
         task = Mock()

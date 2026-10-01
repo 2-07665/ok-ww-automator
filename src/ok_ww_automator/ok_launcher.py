@@ -228,25 +228,51 @@ def run_onetime_task(
     monotonic: Callable[[], float] = time.monotonic,
     on_poll: Callable[[], None] | None = None,
 ) -> str:
+    from ok.task.exceptions import FinishedException, TaskDisabledException
+
     # Headless callers own post-task OCR and cleanup. A saved GUI preference
     # must not shut down the game before those reads finish.
     task.exit_after_task = False
     if task.config.get("Exit After Task"):
         task.config["Exit After Task"] = False
-    task.enable()
-    task.unpause()
-    deadline = monotonic() + timeout_seconds
-    while monotonic() < deadline:
-        if on_poll is not None:
-            on_poll()
-        if executor.exit_event.is_set():
-            raise OkLaunchError("Executor exit event set before task finished")
-        if not task.enabled and executor.current_task is not task:
-            if error := get_task_error(task):
-                return f"{task.name}: {error}"
-            return ""
-        sleep(poll_seconds)
-    raise TimeoutError(f"{task.name} did not finish within {timeout_seconds:g} seconds")
+    # The executor stores str(exc), which can be empty. Observe only exceptions
+    # escaping this task's run; recovered/logged errors keep their existing policy.
+    original_run = task.run
+    missing = object()
+    original_override = task.__dict__.get("run", missing)
+    run_error = None
+
+    def observed_run(*args, **kwargs):
+        nonlocal run_error
+        try:
+            return original_run(*args, **kwargs)
+        except (TaskDisabledException, FinishedException):
+            raise
+        except Exception as exc:
+            run_error = str(exc).strip() or type(exc).__name__
+            raise
+
+    task.run = observed_run
+    try:
+        task.enable()
+        task.unpause()
+        deadline = monotonic() + timeout_seconds
+        while monotonic() < deadline:
+            if on_poll is not None:
+                on_poll()
+            if executor.exit_event.is_set():
+                raise OkLaunchError("Executor exit event set before task finished")
+            if not task.enabled and executor.current_task is not task:
+                if error := run_error or get_task_error(task):
+                    return f"{task.name}: {error}"
+                return ""
+            sleep(poll_seconds)
+        raise TimeoutError(f"{task.name} did not finish within {timeout_seconds:g} seconds")
+    finally:
+        if original_override is missing:
+            del task.run
+        else:
+            task.run = original_override
 
 
 def get_task_error(task: Any) -> str | None:

@@ -479,6 +479,14 @@
       "symbol": "TaskDisabledException"
     },
     {
+      "id": "ok.FinishedException",
+      "root": "ok",
+      "file": "ok/task/exceptions.py",
+      "kind": "symbol",
+      "reason": "Normal upstream finish signals must not become retryable task errors.",
+      "symbol": "FinishedException"
+    },
+    {
       "id": "ok.lazy_exports",
       "root": "ok",
       "file": "ok/__init__.py",
