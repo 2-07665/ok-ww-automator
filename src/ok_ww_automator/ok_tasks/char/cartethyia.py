@@ -2,9 +2,10 @@ import time
 
 class Cartethyia:
     SKILL_COOLDOWN = 14.0
-    SKILL_COOLDOWN_MARGIN = 0.5
-    ONE_SHOT_MAX_WAIT = 0.5
+    SKILL_COOLDOWN_MARGIN = 0.4
+    ONE_SHOT_MAX_WAIT = 0.6
     SWORD2_ATTACK_SECONDS = 2.5
+    HEAVY_ATTACK_RECOVERY_SECONDS = 1.0
 
     def __init__(self, task):
         self.task = task
@@ -83,4 +84,6 @@ class Cartethyia:
         self.task.mouse_down()
         time.sleep(0.4)
         self.task.mouse_up()
+        # Allow the heavy attack to finish before E can accept input.
+        time.sleep(self.HEAVY_ATTACK_RECOVERY_SECONDS)
         self.has_sword1 = True
