@@ -300,17 +300,21 @@ def get_task_error(task: Any) -> str | None:
 def run_auto_farm(
     ww_root: Path, *, stop_at: float,
     on_progress: Callable[[FarmProgress], None] | None = None,
-) -> None:
-    """Run fixed-position farming against the already open game until a monotonic deadline."""
+) -> str:
+    """Farm to the deadline and merge; return any merge failure for shutdown reporting."""
     with ww_runtime_context(ww_root):
         from ok import OK
         from config import config
         from .ok_tasks.fast_farm_echo import FastFarmEchoTask
+        from .ok_tasks.five_to_one import FiveToOneTask
 
         headless_config = dict(config)
         headless_config.pop("gui", None)
         headless_config["use_gui"] = False
-        headless_config["onetime_tasks"] = [["ok_ww_automator.ok_tasks.fast_farm_echo", "FastFarmEchoTask"]]
+        headless_config["onetime_tasks"] = [
+            ["ok_ww_automator.ok_tasks.fast_farm_echo", "FastFarmEchoTask"],
+            ["ok_ww_automator.ok_tasks.five_to_one", "FiveToOneTask"],
+        ]
         headless_config["trigger_tasks"] = []
         ok = OK(headless_config)
         try:
@@ -354,6 +358,41 @@ def run_auto_farm(
                 if time.monotonic() < stop_at:
                     raise OkLaunchError("Auto Farm stopped before the scheduled end time.")
             report_progress()
+            # Disabling is cooperative; wait for combat to release the executor.
+            exit_deadline = time.monotonic() + 30
+            while task.running or ok.task_executor.current_task is task:
+                if ok.task_executor.exit_event.is_set():
+                    raise OkLaunchError("Executor exited while stopping Auto Farm.")
+                if time.monotonic() >= exit_deadline:
+                    raise OkLaunchError("Auto Farm did not stop before post-farm processing.")
+                time.sleep(1)
+
+            def report_finishing(state: str, remaining: float = 0) -> None:
+                if on_progress is not None:
+                    on_progress(FarmProgress(
+                        state, count=int(task.info_get("Fight Count") or 0),
+                        elapsed=time.monotonic() - started_at, remaining=remaining,
+                    ))
+
+            wait_deadline = time.monotonic() + 300
+            while (remaining := wait_deadline - time.monotonic()) > 0:
+                if ok.task_executor.exit_event.is_set():
+                    raise OkLaunchError("Executor exited before merging echoes.")
+                report_finishing("waiting", remaining)
+                time.sleep(min(1, remaining))
+            if ok.task_executor.exit_event.is_set():
+                raise OkLaunchError("Executor exited before merging echoes.")
+            report_finishing("merging")
+            try:
+                merge_task = ok.task_executor.get_task_by_class(FiveToOneTask)
+                error = run_onetime_task(ok.task_executor, merge_task, poll_seconds=1)
+            except Exception as exc:
+                if ok.task_executor.exit_event.is_set():
+                    raise
+                error = str(exc).strip() or type(exc).__name__
+            if ok.task_executor.exit_event.is_set():
+                raise OkLaunchError("Executor exited while merging echoes.")
+            return error
         finally:
             ok.quit()
 

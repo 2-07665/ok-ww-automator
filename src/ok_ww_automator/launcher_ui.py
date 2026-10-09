@@ -436,10 +436,18 @@ class LauncherWindow(FluentWindow):
         if progress.state == "running":
             self.statistics.update(progress)
             self.farm_status.setText("正在速刷")
-            self.farm_message.setText("到达设定时间后自动停止并关机。")
+            self.farm_message.setText("到点后原地等待 300 秒，五合一结束后关机（失败也关机）。")
             self._show_statistics()
         elif progress.state == "connecting":
             self.remaining_label.setText(duration_text(progress.remaining))
+        elif progress.state == "waiting":
+            self.farm_status.setText("原地等待")
+            self.farm_message.setText("速刷已结束，等待结束后执行五合一。")
+            self.remaining_label.setText(duration_text(progress.remaining))
+        elif progress.state == "merging":
+            self.farm_status.setText("正在五合一")
+            self.farm_message.setText("五合一结束后自动关机（失败也关机）。")
+            self.remaining_label.setText("00:00:00")
         elif progress.state == "failed":
             self._farm_error = progress.message
             self.farm_status.setText("运行失败")

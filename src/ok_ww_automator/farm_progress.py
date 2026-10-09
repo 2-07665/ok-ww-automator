@@ -31,7 +31,7 @@ def read_progress(line: str) -> FarmProgress | None:
         return None
     try:
         progress = FarmProgress(**json.loads(line[len(PROGRESS_PREFIX):]))
-        if progress.state not in {"connecting", "running", "shutdown", "failed"}:
+        if progress.state not in {"connecting", "running", "waiting", "merging", "shutdown", "failed"}:
             return None
         if not isinstance(progress.count, int) or progress.count < 0:
             return None

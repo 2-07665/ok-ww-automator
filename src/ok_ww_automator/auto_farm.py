@@ -1,4 +1,4 @@
-"""Farm in the current game until the chosen system-local time, then shut down."""
+"""Farm until the chosen time, wait in place, merge echoes, then shut down."""
 
 from __future__ import annotations
 
@@ -24,18 +24,21 @@ def main(argv: list[str] | None = None) -> int:
         target += dt.timedelta(days=1)
     remaining = target.timestamp() - now.timestamp()
     stop_at = time.monotonic() + remaining
-    print(f"Auto Farm: use current game; stop and shut down at {target:%Y-%m-%d %H:%M} system-local time.", flush=True)
+    print(f"Auto Farm: stop farming at {target:%Y-%m-%d %H:%M} system-local time; wait 300 seconds, merge echoes, then shut down.", flush=True)
     emit_progress(FarmProgress("connecting", remaining=remaining))
 
     from .ok_launcher import run_auto_farm
 
     try:
-        run_auto_farm(args.ww_root.resolve(), stop_at=stop_at, on_progress=emit_progress)
+        merge_error = run_auto_farm(args.ww_root.resolve(), stop_at=stop_at, on_progress=emit_progress)
+        if merge_error:
+            emit_progress(FarmProgress("failed", message=f"五合一失败：{merge_error}"))
         subprocess.run(["shutdown.exe", "/s", "/t", "5"], check=True)
     except Exception as exc:
         emit_progress(FarmProgress("failed", message=str(exc)))
         raise
-    emit_progress(FarmProgress("shutdown", message="已到结束时间，系统将在 5 秒后关机。"))
+    message = f"五合一失败：{merge_error}；系统将在 5 秒后关机。" if merge_error else "五合一已完成，系统将在 5 秒后关机。"
+    emit_progress(FarmProgress("shutdown", message=message))
     return 0
 
 
