@@ -7,7 +7,7 @@ from pathlib import Path
 import queue
 import subprocess
 
-from PySide6.QtCore import QItemSelectionModel, Qt, QTimer, QUrl
+from PySide6.QtCore import QItemSelectionModel, QSettings, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QFont, QIcon
 from PySide6.QtWidgets import QAbstractItemView, QGridLayout, QHBoxLayout, QHeaderView, QTableWidgetItem, QVBoxLayout, QWidget
 from qfluentwidgets import (
@@ -19,6 +19,8 @@ from qfluentwidgets import (
 
 from .env_discovery import AccountEnv, discover_account_envs
 from .farm_progress import FarmProgress, FarmStatistics
+from .time_utils import parse_time_of_day
+from .screensaver import ScreenSaver
 from .windows_launcher import (
     APP_NAME, DEFAULT_WINDOW_SIZE, GAME_LAUNCH_COOLDOWN_MS, MAX_LOG_LINES,
     MINIMUM_ACCOUNT_TABLE_HEIGHT, MINIMUM_LOG_HEIGHT, MINIMUM_WINDOW_SIZE,
@@ -66,6 +68,8 @@ class LauncherWindow(FluentWindow):
         self._game_launch_cooldown = False
         self._farm_error = ""
         self._farm_shutdown = False
+        self.preferences = QSettings("ok-ww-automator", "launcher")
+        self.screensaver = ScreenSaver(self)
 
         self.setWindowTitle(APP_NAME)
         self.resize(*DEFAULT_WINDOW_SIZE)
@@ -79,6 +83,11 @@ class LauncherWindow(FluentWindow):
         self.addSubInterface(self.tools_page, FIF.ROBOT, "OK 工具")
         self.addSubInterface(self.farm_page, FIF.GAME, "Auto Farm")
         self.addSubInterface(self.logs_page, FIF.DOCUMENT, "运行日志", NavigationItemPosition.BOTTOM)
+        self.navigationInterface.addItem(
+            routeKey="screensaver", icon=FIF.VIEW, text="屏保",
+            onClick=self.screensaver.show, selectable=False,
+            position=NavigationItemPosition.BOTTOM,
+        ).setToolTip("黑屏屏保；按 Esc 或点击鼠标恢复")
         self.navigationInterface.setExpandWidth(200)
         self.navigationInterface.setMinimumExpandWidth(900)
         self.navigationInterface.expand(useAni=False)
@@ -138,7 +147,12 @@ class LauncherWindow(FluentWindow):
         settings_layout.addWidget(SubtitleLabel("到点关机", settings), 0, 0)
         settings_layout.addWidget(CaptionLabel("系统本地时间 · 已过的时刻按次日计算", settings), 1, 0)
         self.stop_time = LineEdit(settings)
-        self.stop_time.setText("03:00")
+        try:
+            saved_time = parse_time_of_day(str(self.preferences.value("auto_farm/stop_time", "03:00")))
+        except ValueError:
+            saved_time = dt.time(3, 0)
+        self.stop_time.setText(saved_time.strftime("%H:%M"))
+        self.stop_time.editingFinished.connect(self._save_stop_time)
         self.stop_time.setPlaceholderText("HH:MM")
         self.stop_time.setFixedWidth(100)
         settings_layout.addWidget(self.stop_time, 0, 1, 2, 1)
@@ -298,6 +312,14 @@ class LauncherWindow(FluentWindow):
                 self.accounts[index], self.accounts[other] = self.accounts[other], self.accounts[index]
         self._fill_accounts(selected)
 
+    def _save_stop_time(self):
+        try:
+            stop_time = parse_time_of_day(self.stop_time.text()).strftime("%H:%M")
+        except ValueError:
+            return
+        self.preferences.setValue("auto_farm/stop_time", stop_time)
+        self.preferences.sync()
+
     def _launch_auto_farm(self):
         if self.paths is None:
             return
@@ -306,6 +328,7 @@ class LauncherWindow(FluentWindow):
         except ValueError as exc:
             self._warn(str(exc))
             return
+        self._save_stop_time()
         self.statistics = FarmStatistics()
         self._farm_error = ""
         self._farm_shutdown = False
@@ -381,6 +404,7 @@ class LauncherWindow(FluentWindow):
 
     def closeEvent(self, event):
         if not self.process.is_active:
+            self.screensaver.hide()
             event.accept()
             return
         event.ignore()
