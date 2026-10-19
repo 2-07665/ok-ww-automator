@@ -11,6 +11,7 @@ import sys
 import traceback
 
 from .config import load_config
+from .diagnostics import configure_screenshots
 from .game_clients import OkDailyGameClient, OkStaminaGameClient, OkWeeklyGameClient
 from .models import SheetRunConfig
 from .ok_launcher import OkLauncher
@@ -19,6 +20,10 @@ from .ok_launcher import OkLauncher
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     output_path = Path(args.output)
+    configure_screenshots(
+        Path(args.project_root).resolve() / "logs" / "diagnostics",
+        f"{Path(args.env_file).stem}-{args.mode}-{args.operation}",
+    )
     try:
         sheet_config = read_sheet_config(Path(args.input))
         app_config = load_config(

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Protocol
 
 from .config import AppConfig
+from .diagnostics import save_failure_screenshot
 from .models import SheetRunConfig
 from .ok_launcher import OkLauncher, kill_game_processes, run_onetime_task, ww_runtime_context
 from .processes import run_with_timeout
@@ -409,10 +410,18 @@ def simulation_material_value(simulation_material: str) -> str:
     }.get(simulation_material.strip(), "Shell Credit")
 
 
+def ensure_main_with_evidence(task) -> None:
+    try:
+        task.ensure_main(esc=True, time_out=20)
+    except Exception:
+        save_failure_screenshot("wait-main")
+        raise
+
+
 def read_live_stamina(task, *, retries: int = 3, retry_sleep: float = 10.0) -> tuple[int | None, int | None]:
     for attempt in range(1, retries + 1):
         try:
-            task.ensure_main(esc=True, time_out=20)
+            ensure_main_with_evidence(task)
             task.openF2Book("gray_book_boss")
             stamina, backup_stamina, _ = task.get_stamina()
             task.send_key("esc", after_sleep=1)
@@ -434,7 +443,7 @@ def read_live_stamina(task, *, retries: int = 3, retry_sleep: float = 10.0) -> t
 def read_live_daily_points(task, *, retries: int = 3, retry_sleep: float = 10.0) -> int | None:
     for attempt in range(1, retries + 1):
         try:
-            task.ensure_main(esc=True, time_out=20)
+            ensure_main_with_evidence(task)
             task.open_daily()
             points = coerce_int(task.info_get("total daily points"))
             # Upstream reports accumulated points: 100 is the completion threshold, not a cap.
@@ -456,7 +465,7 @@ def read_live_daily_points(task, *, retries: int = 3, retry_sleep: float = 10.0)
 def restore_main(task) -> None:
     """Best-effort navigation after a read must not erase data or defeat retries."""
     try:
-        task.ensure_main(esc=True, time_out=20)
+        ensure_main_with_evidence(task)
     except Exception:
         pass
 

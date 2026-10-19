@@ -329,13 +329,11 @@ class OkLauncherTest(unittest.TestCase):
         start_ok.assert_called_once_with()
         ensure_game_ready.assert_called_once_with(ok)
 
-    def test_start_ok_and_game_recreates_ok_when_first_launch_gets_stuck(self) -> None:
+    def test_failed_start_is_cleaned_up_and_left_for_fresh_process_retry(self) -> None:
         launcher = OkLauncher(
             OkLaunchOptions(
                 ww_root=Path("/ww"),
                 game_exe_path=Path("/game/Wuthering Waves.exe"),
-                start_attempts=2,
-                restart_settle_seconds=7,
             ),
             sleep=lambda seconds: sleeps.append(seconds),
         )
@@ -345,6 +343,7 @@ class OkLauncherTest(unittest.TestCase):
 
         with (
             patch("ok_ww_automator.ok_launcher.kill_game_processes") as kill_processes,
+            patch("ok_ww_automator.ok_launcher.save_failure_screenshot") as screenshot,
             patch.object(launcher, "start_ok", side_effect=[first_ok, second_ok]) as start_ok,
             patch.object(
                 launcher,
@@ -352,14 +351,16 @@ class OkLauncherTest(unittest.TestCase):
                 side_effect=[OkLaunchError("capture stuck"), None],
             ) as ensure_game_ready,
         ):
-            self.assertIs(launcher.start_ok_and_game(), second_ok)
+            with self.assertRaisesRegex(OkLaunchError, "capture stuck"):
+                launcher.start_ok_and_game()
 
-        self.assertEqual(start_ok.call_count, 2)
-        self.assertEqual(ensure_game_ready.call_count, 2)
+        self.assertEqual(start_ok.call_count, 1)
+        self.assertEqual(ensure_game_ready.call_count, 1)
+        screenshot.assert_called_once_with("startup")
         self.assertTrue(first_ok.device_manager.stopped)
         self.assertTrue(first_ok.quit_called)
         self.assertEqual(kill_processes.call_count, 2)
-        self.assertEqual(sleeps, [7])
+        self.assertEqual(sleeps, [])
 
     def test_kill_game_processes_kills_known_process_names(self) -> None:
         class FakeProc:

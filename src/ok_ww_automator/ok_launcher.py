@@ -15,6 +15,7 @@ from typing import Any, Callable, Iterator, Protocol
 from .config import AppConfig
 from .farm_progress import FarmProgress
 from .game_launch import game_launch_arguments
+from .diagnostics import save_failure_screenshot
 
 
 class OkLaunchError(RuntimeError):
@@ -57,8 +58,6 @@ class OkLaunchOptions:
     launch_wait_seconds: float = 300.0
     ready_timeout_seconds: float = 120.0
     ready_poll_seconds: float = 5.0
-    start_attempts: int = 2
-    restart_settle_seconds: float = 10.0
     game_resource_quality: str = "hd"
 
 
@@ -104,26 +103,20 @@ class OkLauncher:
 
     def start_ok_and_game(self) -> OkRuntime:
         kill_game_processes()
-        last_error: Exception | None = None
-        for attempt in range(1, self.options.start_attempts + 1):
-            ok: OkRuntime | None = None
-            try:
-                ok = self.start_ok()
-                self.ensure_game_ready(ok)
-                return ok
-            except Exception as exc:
-                last_error = exc
-                if ok is not None:
-                    stop_ok_runtime(ok)
-                kill_game_processes()
-                if attempt < self.options.start_attempts:
-                    self.sleep(self.options.restart_settle_seconds)
-
-        if last_error is not None:
-            raise OkLaunchError(
-                f"OK was not ready after {self.options.start_attempts:g} launch attempt(s): {last_error}"
-            ) from last_error
-        raise OkLaunchError("OK was not ready")
+        # OK owns process-global state, including its shared ExitEvent. Once
+        # quit, it cannot safely be reconstructed here. The runner retries the
+        # operation in a fresh game_attempt process instead.
+        ok: OkRuntime | None = None
+        try:
+            ok = self.start_ok()
+            self.ensure_game_ready(ok)
+            return ok
+        except Exception:
+            save_failure_screenshot("startup")
+            if ok is not None:
+                stop_ok_runtime(ok)
+            kill_game_processes()
+            raise
 
     def ensure_game_ready(self, ok: OkRuntime) -> None:
         device_manager = ok.device_manager
