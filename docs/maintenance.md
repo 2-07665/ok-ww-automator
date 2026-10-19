@@ -45,6 +45,12 @@ Reviewed on 2026-09-27 against remote default-branch HEADs:
 
 For incident investigation, [debug-automator](../.agents/skills/debug-automator/SKILL.md) includes log navigation, repository context and a read-only recent Sheets results script. Use [align-upstream](../.agents/skills/align-upstream/SKILL.md) when reviewing an upstream upgrade.
 
+## Failure screenshots
+
+For startup or main-world navigation incidents, inspect `logs/diagnostics/*.png` in the Automator checkout together with upstream logs and the Sheets report. Filenames contain local time, profile name, mode, operation, PID and stage (`startup` or `wait-main`), allowing images to be matched to a particular child process. See [debug-automator's screenshot guidance](../.agents/skills/debug-automator/SKILL.md#failure-screenshots) for interpretation and coverage.
+
+Isolated game attempts capture startup failures before cleanup, and failed main-world navigation during live stamina/daily-point reads, including navigation recovery. Pillow captures all desktop monitors independently of OK's capture connection, so other visible applications can appear. Missing Pillow, a locked/unavailable desktop, or a hard process timeout can prevent a useful image; absence of a screenshot is not proof of success. Capture errors preserve the original task error. Images stay local and require manual cleanup.
+
 ## Tests
 
 ```powershell

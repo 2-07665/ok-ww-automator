@@ -16,10 +16,19 @@ An attached log is useful, but normally the deployed machine already has the evi
 | `ok-wuthering-waves/logs/ok-script.log` | Current upstream log, including game attempts, measurements and exceptions. |
 | `ok-script.YYYY-MM-DD.log` in the same directory | Rotated logs; older versions may use `ok-script.log.YYYY-MM-DD`. Current upstream rotates at local midnight and retains seven archives. |
 | `ok-ww-automator/logs/launcher-*.log` | Captured stdout/stderr for launcher-managed operations, including orchestration failures. Scheduled invocations do not necessarily create these files. |
+| `ok-ww-automator/logs/diagnostics/*.png` | Desktop evidence from isolated attempts: startup failures before cleanup, and failed main-world navigation during live stamina/daily-point reads. |
 | Sheets `DailyRuns` / `StaminaRuns` | Short final reports: status, metrics, decision, error and start/end time. Names and spreadsheet IDs come from each profile. |
 | `.state/weekly/*.sqlite3` | Weekly completion/notification state, keyed by the absolute env path. Weekly does not write DailyRuns/StaminaRuns. Inspect an existing database read-only rather than invoking the runner. |
 
 For “today,” use the deployed machine's local date. Logs and daily/stamina report timestamps use local wall time; report cells have no UTC offset. Daily schedule calculations use Beijing time. Weekly resets, run days, notices and weekly report timestamps use the account's GAME_SERVER fixed-offset clock; weekly database keys and completion timestamps use UTC. Check the timestamps inside a file: an unrotated current log can contain an earlier date, and a run crossing midnight may span files. If retained logs don't cover the incident, say what is missing rather than interpreting silence as success.
+
+### Failure screenshots
+
+Match screenshots to the report's local time and the log's account/mode/PID before interpreting them. Names follow `YYYYMMDD-HHMMSS-microseconds-<profile>-<mode>-<operation>-<pid>-<stage>.png`; stages are `startup` and `wait-main`. For example, `CN-stamina-read` identifies a stamina-reading child, not a farming attempt. Open matching images to check for login dialogs, loading screens or other visible blockers alongside the log evidence.
+
+`diagnostics.py` uses Pillow `ImageGrab.grab(all_screens=True)` independently of OK capture. It records the entire desktop, including other visible applications; it is not a game-window-only capture and can show an occluding window instead of the game. The isolated `game_attempt.py` entry point enables it. Startup capture happens before OK/game cleanup; `wait-main` capture happens when `ensure_main()` raises during a live read or its best-effort navigation recovery. It does not cover every upstream task timeout.
+
+Missing images do not establish that startup/navigation succeeded. Older revisions lack this feature; missing Pillow, an unavailable/locked desktop, or a hard child timeout before the handler executes can leave no useful image. Captures are best effort and do not replace the original error. Look for `Failure screenshot saved` / `Could not save failure screenshot` in captured process output when available. Images remain local until manually removed; there is no automatic upload or retention cleanup. Inspect existing evidence before considering a live reproduction.
 
 ### Recent Sheets results
 
@@ -73,7 +82,7 @@ Paths below are under `src/ok_ww_automator/`:
 
 Some important distinctions when assessing a fix:
 
-- Account/game attempts use fresh child processes to isolate upstream globals, native teardown and named mutexes. Readiness retries can reconstruct OK inside the same child, so multiple initialization lines do not necessarily mean different attempts. The sibling `ok-script` source checkout is not necessarily the installed `ok` package used by the shared interpreter.
+- Account/game attempts use fresh child processes to isolate upstream globals, native teardown and named mutexes. Since `583da7e`, startup failure returns to the runner for a fresh-process retry; OK is not reconstructed after quit in the same child. Older revisions had an inner readiness retry that reused the process and could inherit a stopped shared exit event. Use PID boundaries and the deployed revision when interpreting repeated initialization lines. The sibling `ok-script` source checkout is not necessarily the installed `ok` package used by the shared interpreter.
 - Daily success requires a measured total **at least 100** without a remaining task error. A “Daily Task Completed” log alone does not establish Automator success; there is final measurement/reporting afterward. The adapter uses `None` for a missing reading, but upstream's daily OCR currently returns **0 on OCR failure**. Zero is therefore not proof of measured zero activity; neither value proves completion.
 - Exit code zero and the launcher's “completed” display describe process completion: `needs review` can still exit zero, sometimes with an empty error field. Consult the result status and metrics. Readiness retries, fresh game attempts and repeated post-task OCR reads are different layers; missing daily points without a task error does not trigger another full daily run.
 - Upstream GUI “Exit After Task” settings are overridden for headless attempts. The scheduler defers requested PC shutdown until all selected jobs finish; `stamina-weekly` completes every stamina job before weekly jobs. Reporting/cleanup failures and game failures are separate concerns.
