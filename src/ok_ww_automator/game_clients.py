@@ -410,18 +410,30 @@ def simulation_material_value(simulation_material: str) -> str:
     }.get(simulation_material.strip(), "Shell Credit")
 
 
+class GameNavigationError(RuntimeError):
+    """World navigation failed; retry in a fresh game attempt, not an OCR loop."""
+
+
 def ensure_main_with_evidence(task) -> None:
+    # Upstream ensure_main silently replaces its timeout with 600 before login.
+    # Keep its is_main login/navigation behavior, but own the waiting budget.
+    timeout = 120 if not task.logged_in else 20
     try:
-        task.ensure_main(esc=True, time_out=20)
-    except Exception:
+        if not task.wait_until(lambda: task.is_main(esc=True), time_out=timeout):
+            raise GameNavigationError(f"Game world was not ready within {timeout} seconds")
+        task.sleep(0.5)
+    except Exception as exc:
         save_failure_screenshot("wait-main")
-        raise
+        if isinstance(exc, GameNavigationError):
+            raise
+        raise GameNavigationError(f"Game world navigation failed: {exc}") from exc
 
 
 def read_live_stamina(task, *, retries: int = 3, retry_sleep: float = 10.0) -> tuple[int | None, int | None]:
     for attempt in range(1, retries + 1):
+        # A failed login must not be followed by another login in finally.
+        ensure_main_with_evidence(task)
         try:
-            ensure_main_with_evidence(task)
             task.openF2Book("gray_book_boss")
             stamina, backup_stamina, _ = task.get_stamina()
             task.send_key("esc", after_sleep=1)
@@ -442,8 +454,8 @@ def read_live_stamina(task, *, retries: int = 3, retry_sleep: float = 10.0) -> t
 
 def read_live_daily_points(task, *, retries: int = 3, retry_sleep: float = 10.0) -> int | None:
     for attempt in range(1, retries + 1):
+        ensure_main_with_evidence(task)
         try:
-            ensure_main_with_evidence(task)
             task.open_daily()
             points = coerce_int(task.info_get("total daily points"))
             # Upstream reports accumulated points: 100 is the completion threshold, not a cap.

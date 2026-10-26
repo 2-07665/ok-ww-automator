@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass
 import importlib
+import logging
 import os
 from pathlib import Path
 import sys
@@ -145,11 +146,35 @@ class OkLauncher:
         deadline = self.monotonic() + self.options.ready_timeout_seconds
         while self.monotonic() < deadline:
             refresh_and_select_connected_device(ok.device_manager)
-            if is_ok_ready(ok):
+            # Focus before requesting a frame: a background game can stop loading.
+            if focus_game_window(ok.device_manager) and is_ok_ready(ok):
                 ok.task_executor.start()
                 return
             self.sleep(self.options.ready_poll_seconds)
-        raise OkLaunchError(f"OK was not ready within {self.options.ready_timeout_seconds:g} seconds")
+        raise OkLaunchError(f"OK capture/input or game foreground focus was not ready within {self.options.ready_timeout_seconds:g} seconds")
+
+
+def focus_game_window(device_manager: DeviceManager) -> bool:
+    """Request real foreground focus and verify it; WM_ACTIVATE is insufficient."""
+    window = getattr(device_manager, "hwnd_window", None)
+    hwnd = getattr(window, "hwnd", None)
+    if not hwnd:
+        return False
+    try:
+        import win32con
+        import win32gui
+
+        if window.is_foreground():
+            return True
+        if win32gui.IsIconic(hwnd):
+            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+        win32gui.SetForegroundWindow(hwnd)
+        return bool(window.is_foreground())
+    except Exception as exc:
+        # Windows can deny foreground activation. Let the bounded startup loop
+        # retry rather than declaring a visible but unfocused window ready.
+        logging.getLogger(__name__).warning("Could not focus game window %s: %s", hwnd, exc)
+        return False
 
 
 def refresh_and_select_connected_device(device_manager: DeviceManager) -> dict[str, Any] | None:

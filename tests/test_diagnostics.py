@@ -20,7 +20,7 @@ class DiagnosticTests(unittest.TestCase):
 
     def test_screenshot_failure_preserves_navigation_error(self):
         task = Mock()
-        task.ensure_main.side_effect = RuntimeError("not in world")
+        task.wait_until.side_effect = RuntimeError("not in world")
         with tempfile.TemporaryDirectory() as directory, \
                 patch.object(diagnostics, "_directory", Path(directory)), \
                 patch.object(self.pil.ImageGrab, "grab", side_effect=OSError("desktop unavailable")):
@@ -29,7 +29,7 @@ class DiagnosticTests(unittest.TestCase):
 
     def test_capture_includes_attempt_label_and_precedes_error_return(self):
         task = Mock()
-        task.ensure_main.side_effect = RuntimeError("not in world")
+        task.wait_until.side_effect = RuntimeError("not in world")
         with tempfile.TemporaryDirectory() as directory, \
                 patch.object(diagnostics, "_directory", Path(directory)), \
                 patch.object(diagnostics, "_label", "CN-stamina-read"), \
@@ -49,7 +49,7 @@ class DiagnosticTests(unittest.TestCase):
 
     def test_missing_pillow_preserves_navigation_error(self):
         task = Mock()
-        task.ensure_main.side_effect = RuntimeError("not in world")
+        task.wait_until.side_effect = RuntimeError("not in world")
         with tempfile.TemporaryDirectory() as directory, \
                 patch.object(diagnostics, "_directory", Path(directory)), \
                 patch.dict(sys.modules, {"PIL": None}), \

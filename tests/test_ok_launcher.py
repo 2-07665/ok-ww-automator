@@ -177,6 +177,7 @@ class Clock:
 
 class OkLauncherTest(unittest.TestCase):
     def setUp(self):
+        self.focus = self.enterContext(patch("ok_ww_automator.ok_launcher.focus_game_window", return_value=True))
         # Core tests must not import or start the real upstream runtime.
         self.enterContext(patch.dict(sys.modules, {"ok.task.exceptions": SimpleNamespace(
             TaskDisabledException=TaskDisabledException, FinishedException=FinishedException,
@@ -188,6 +189,31 @@ class OkLauncherTest(unittest.TestCase):
 
         self.assertTrue(is_ok_ready(ready))
         self.assertFalse(is_ok_ready(no_capture))
+
+    def test_unfocused_game_does_not_start_executor_even_with_valid_frame(self):
+        self.focus.return_value = False
+        ok = FakeOk(FakeDeviceManager({"connected": True}, FakeCapture(True), object()))
+        clock = Clock()
+        launcher = OkLauncher(OkLaunchOptions(Path("/ww"), Path("/game"),
+            ready_timeout_seconds=3, ready_poll_seconds=1),
+            sleep=clock.sleep, monotonic=clock.monotonic)
+        with self.assertRaisesRegex(OkLaunchError, "foreground focus"):
+            launcher.refresh_until_ready(ok)
+        self.assertFalse(ok.task_executor.started)
+        self.assertEqual(clock.sleeps, [1, 1])
+
+    def test_focus_is_requested_before_capture_and_retried(self):
+        self.focus.side_effect = [False, True]
+        ok = FakeOk(FakeDeviceManager({"connected": True}, FakeCapture(True), object()))
+        clock = Clock()
+        launcher = OkLauncher(OkLaunchOptions(Path("/ww"), Path("/game"),
+            ready_timeout_seconds=3, ready_poll_seconds=1),
+            sleep=clock.sleep, monotonic=clock.monotonic)
+        with patch("ok_ww_automator.ok_launcher.is_ok_ready", return_value=True) as ready:
+            launcher.refresh_until_ready(ok)
+        ready.assert_called_once()
+        self.assertTrue(ok.task_executor.started)
+        self.assertEqual(clock.sleeps, [1])
 
     def test_is_ok_ready_requires_a_real_capture_frame(self) -> None:
         no_frame = FakeOk(FakeDeviceManager({"connected": True}, FakeCapture(True, frame=False), object()))

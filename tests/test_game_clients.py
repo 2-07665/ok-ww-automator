@@ -26,6 +26,8 @@ from ok_ww_automator.game_clients import (
     normalize_daily_task_error,
     read_live_daily_points,
     read_live_stamina,
+    GameNavigationError,
+    ensure_main_with_evidence,
 )
 
 
@@ -41,6 +43,8 @@ class FakeNightmareTask:
 
 
 class FakeDailyPointsTask:
+    logged_in = True
+
     def __init__(self, points=0, *, open_exc: Exception | None = None) -> None:
         if isinstance(points, list):
             self.points_by_attempt = points.copy()
@@ -51,8 +55,12 @@ class FakeDailyPointsTask:
         self.open_count = 0
         self.ensure_count = 0
 
-    def ensure_main(self, **kwargs) -> None:
+    def wait_until(self, condition, **kwargs):
         self.ensure_count += 1
+        return True
+
+    def sleep(self, seconds):
+        pass
 
     def open_daily(self) -> None:
         self.open_count += 1
@@ -232,22 +240,34 @@ class GameClientsTest(unittest.TestCase):
 
     def test_live_reads_preserve_measurement_when_navigation_cleanup_fails(self):
         task = Mock()
-        task.ensure_main.side_effect = [None, RuntimeError("navigation failed")]
+        task.wait_until.side_effect = [True, RuntimeError("navigation failed")]
         task.get_stamina.return_value = (70, 10, 80)
         self.assertEqual(read_live_stamina(task, retry_sleep=0), (70, 10))
-        task.ensure_main.side_effect = [None, RuntimeError("navigation failed")]
+        task.wait_until.side_effect = [True, RuntimeError("navigation failed")]
         task.info_get.return_value = 100
         self.assertEqual(read_live_daily_points(task, retry_sleep=0), 100)
 
-    def test_live_reads_retry_after_navigation_failure(self):
-        task = Mock()
-        task.ensure_main.side_effect = [RuntimeError("not in world"), RuntimeError("still loading"), None, None]
-        task.get_stamina.return_value = (70, 10, 80)
-        self.assertEqual(read_live_stamina(task, retries=2, retry_sleep=0), (70, 10))
-        self.assertEqual(task.ensure_main.call_count, 4)
-        task.ensure_main.side_effect = RuntimeError("disconnected")
-        self.assertEqual(read_live_stamina(task, retries=2, retry_sleep=0), (None, None))
-        self.assertIsNone(read_live_daily_points(task, retries=2, retry_sleep=0))
+    def test_failed_login_leaves_ocr_loop_without_repeating_navigation(self):
+        for read in (read_live_stamina, read_live_daily_points):
+            task = Mock(logged_in=False)
+            task.wait_until.return_value = False
+            with patch("ok_ww_automator.game_clients.save_failure_screenshot") as capture:
+                with self.assertRaisesRegex(GameNavigationError, "120 seconds"):
+                    read(task, retries=3, retry_sleep=0)
+            self.assertEqual(task.wait_until.call_count, 1)
+            task.open_daily.assert_not_called()
+            task.openF2Book.assert_not_called()
+            capture.assert_called_once_with("wait-main")
+
+    def test_navigation_uses_explicit_budget_and_retains_login_behavior(self):
+        for logged_in, timeout in ((False, 120), (True, 20)):
+            task = Mock(logged_in=logged_in)
+            task.is_main.return_value = True
+            task.wait_until.side_effect = lambda condition, **kw: condition()
+            ensure_main_with_evidence(task)
+            self.assertEqual(task.wait_until.call_args.kwargs["time_out"], timeout)
+            task.is_main.assert_called_once_with(esc=True)
+            task.ensure_main.assert_not_called()
 
     def test_daily_points_do_not_treat_missing_or_invalid_readings_as_zero(self):
         task = FakeDailyPointsTask([None, -1, "bad"])
