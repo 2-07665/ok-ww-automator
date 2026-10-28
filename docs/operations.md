@@ -14,6 +14,8 @@ Windows triggers use system-local time. Stamina predictions use `DAILY_HOUR`/`DA
 
 ## Daily and stamina
 
+Unattended attempts use SDR capture: Automator removes `WGC_HDR` from its in-memory Windows capture choices before OK initializes, preserving the remaining order and saved GUI settings. A delayed WGC first frame must not silently select HDR tone mapping, which changes colors used by combat recognition. An HDR-only configuration fails startup explicitly. Run unattended tasks with HDR disabled; this does not add support for HDR displays. The ready log records the actual capture class. On October 28, a stalled daily attempt selected WGC_HDR after a 1.5-second WGC probe timeout and repeatedly reported zero concerto, while a subsequent successful GUI battle used WGC with Windows HDR disabled. Offline selector replay verifies the fallback correction; live combat recovery remains to be verified.
+
 Daily reads the sheet, consumes a skip-once flag if requested, optionally performs community sign-in through Waves API, and executes upstream DailyTask. It then reads live stamina and daily points, writes a result and sends configured notices. An ended battle pass is treated as optional work; other task errors remain visible.
 
 Daily succeeds when the live points total is at least 100 and there is no task error. Totals can exceed 100 (for example, 130 or 140) and are reported as measured. Missing readings, totals below 100, or task errors require review.

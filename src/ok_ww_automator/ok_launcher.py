@@ -94,9 +94,7 @@ class OkLauncher:
     def start_ok(self) -> OkRuntime:
         with ww_runtime_context(self.options.ww_root):
             imports = load_runtime_imports(self.options.ww_root)
-            headless_config = dict(imports.config)
-            headless_config.pop("gui", None)
-            headless_config["use_gui"] = False
+            headless_config = make_headless_config(imports.config)
             ok = imports.ok_class(headless_config)
         if getattr(ok, "task_executor", None) is None:
             raise OkLaunchError("OK initialized without a task executor")
@@ -148,10 +146,34 @@ class OkLauncher:
             refresh_and_select_connected_device(ok.device_manager)
             # Focus before requesting a frame: a background game can stop loading.
             if focus_game_window(ok.device_manager) and is_ok_ready(ok):
+                logging.getLogger(__name__).info(
+                    "Headless capture ready: %s",
+                    type(ok.device_manager.capture_method).__name__,
+                )
                 ok.task_executor.start()
                 return
             self.sleep(self.options.ready_poll_seconds)
         raise OkLaunchError(f"OK capture/input or game foreground focus was not ready within {self.options.ready_timeout_seconds:g} seconds")
+
+
+def make_headless_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Keep unattended color recognition on SDR capture backends."""
+    headless = dict(config)
+    headless.pop("gui", None)
+    headless["use_gui"] = False
+    if windows := config.get("windows"):
+        windows = dict(windows)
+        methods = windows.get("capture_method", [])
+        if "WGC_HDR" in methods:
+            # A slow first WGC frame can select HDR even on an SDR display.
+            # HDR's tone mapping changes the colors used by combat recognition;
+            # a nonempty frame alone does not make that fallback safe.
+            methods = [method for method in methods if method != "WGC_HDR"]
+            if not methods:
+                raise OkLaunchError("Headless tasks require an SDR capture method; WGC_HDR alone is unsupported")
+            windows["capture_method"] = methods
+        headless["windows"] = windows
+    return headless
 
 
 def focus_game_window(device_manager: DeviceManager) -> bool:

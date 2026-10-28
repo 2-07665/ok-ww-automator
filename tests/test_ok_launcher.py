@@ -14,6 +14,7 @@ from ok_ww_automator.ok_launcher import (
     get_task_error,
     is_ok_ready,
     kill_game_processes,
+    make_headless_config,
     run_onetime_task,
     ww_runtime_context,
 )
@@ -334,6 +335,46 @@ class OkLauncherTest(unittest.TestCase):
             self.assertEqual(upstream_config, {"gui": {"type": "qt"}})
             self.assertNotIn(str(ww_root), sys.path)
             self.assertNotEqual(Path.cwd(), ww_root)
+
+    def test_headless_capture_excludes_hdr_before_runtime_initializes(self) -> None:
+        upstream = {
+            "gui": {"type": "qt"},
+            "windows": {"capture_method": ["WGC", "WGC_HDR", "BitBlt_RenderFull"],
+                        "interaction": "PostMessage"},
+        }
+        seen = []
+
+        def construct(config):
+            # DeviceManager can probe capture backends during construction,
+            # before the launcher's readiness loop runs.
+            seen.append(config["windows"]["capture_method"])
+            return SimpleNamespace(task_executor=object())
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            launcher = OkLauncher(OkLaunchOptions(Path(tmp_dir), Path("game.exe")))
+            with patch("ok_ww_automator.ok_launcher.load_runtime_imports") as imports:
+                imports.return_value.config = upstream
+                imports.return_value.ok_class = construct
+                launcher.start_ok()
+
+        self.assertEqual(seen, [["WGC", "BitBlt_RenderFull"]])
+        self.assertEqual(upstream["windows"]["capture_method"],
+                         ["WGC", "WGC_HDR", "BitBlt_RenderFull"])
+        self.assertEqual(upstream["gui"], {"type": "qt"})
+        self.assertEqual(make_headless_config(upstream)["windows"]["interaction"], "PostMessage")
+
+    def test_headless_hdr_only_configuration_fails_instead_of_using_wrong_colors(self) -> None:
+        with self.assertRaisesRegex(OkLaunchError, "SDR capture"):
+            make_headless_config({"windows": {"capture_method": ["WGC_HDR"]}})
+
+    def test_headless_preserves_other_capture_choices_and_order(self) -> None:
+        for methods in (["BitBlt_RenderFull", "WGC"], ["WGC"], ["DXGI", "WGC_HDR", "WGC"]):
+            with self.subTest(methods=methods):
+                config = {"windows": {"capture_method": methods}}
+                actual = make_headless_config(config)
+                self.assertEqual(actual["windows"]["capture_method"],
+                                 [method for method in methods if method != "WGC_HDR"])
+                self.assertIsNot(actual["windows"], config["windows"])
 
     def test_start_ok_and_game_kills_existing_game_processes_before_starting(self) -> None:
         launcher = OkLauncher(
