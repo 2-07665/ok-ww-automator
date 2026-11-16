@@ -154,7 +154,7 @@ class OkDailyGameClient:
                 if daily_task is None or nightmare_task is None:
                     raise RuntimeError("DailyTask or NightmareNestTask is not registered")
                 apply_daily_task_config(sheet_config, daily_task, nightmare_task)
-                stamina_start, backup_start = read_live_stamina(daily_task)
+                stamina_start, backup_start = read_live_stamina(daily_task, login_timeout_seconds=300)
                 task_error = normalize_daily_task_error(
                     run_onetime_task(ok.task_executor, daily_task, timeout_seconds=1800)
                 )
@@ -414,10 +414,10 @@ class GameNavigationError(RuntimeError):
     """World navigation failed; retry in a fresh game attempt, not an OCR loop."""
 
 
-def ensure_main_with_evidence(task) -> None:
+def ensure_main_with_evidence(task, *, login_timeout_seconds: float = 120) -> None:
     # Upstream ensure_main silently replaces its timeout with 600 before login.
     # Keep its is_main login/navigation behavior, but own the waiting budget.
-    timeout = 120 if not task.logged_in else 20
+    timeout = 20 if task.logged_in else login_timeout_seconds
     try:
         if not task.wait_until(lambda: task.is_main(esc=True), time_out=timeout):
             raise GameNavigationError(f"Game world was not ready within {timeout} seconds")
@@ -429,10 +429,12 @@ def ensure_main_with_evidence(task) -> None:
         raise GameNavigationError(f"Game world navigation failed: {exc}") from exc
 
 
-def read_live_stamina(task, *, retries: int = 3, retry_sleep: float = 10.0) -> tuple[int | None, int | None]:
+def read_live_stamina(
+    task, *, retries: int = 3, retry_sleep: float = 10.0, login_timeout_seconds: float = 120,
+) -> tuple[int | None, int | None]:
     for attempt in range(1, retries + 1):
         # A failed login must not be followed by another login in finally.
-        ensure_main_with_evidence(task)
+        ensure_main_with_evidence(task, login_timeout_seconds=login_timeout_seconds)
         try:
             task.openF2Book("gray_book_boss")
             stamina, backup_stamina, _ = task.get_stamina()

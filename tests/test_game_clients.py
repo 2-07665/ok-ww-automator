@@ -248,13 +248,18 @@ class GameClientsTest(unittest.TestCase):
         self.assertEqual(read_live_daily_points(task, retry_sleep=0), 100)
 
     def test_failed_login_leaves_ocr_loop_without_repeating_navigation(self):
-        for read in (read_live_stamina, read_live_daily_points):
+        for read, login_options, timeout in (
+            (read_live_stamina, {}, 120),
+            (read_live_daily_points, {}, 120),
+            (read_live_stamina, {"login_timeout_seconds": 300}, 300),
+        ):
             task = Mock(logged_in=False)
             task.wait_until.return_value = False
             with patch("ok_ww_automator.game_clients.save_failure_screenshot") as capture:
-                with self.assertRaisesRegex(GameNavigationError, "120 seconds"):
-                    read(task, retries=3, retry_sleep=0)
+                with self.assertRaisesRegex(GameNavigationError, f"{timeout} seconds"):
+                    read(task, retries=3, retry_sleep=0, **login_options)
             self.assertEqual(task.wait_until.call_count, 1)
+            self.assertEqual(task.wait_until.call_args.kwargs["time_out"], timeout)
             task.open_daily.assert_not_called()
             task.openF2Book.assert_not_called()
             capture.assert_called_once_with("wait-main")

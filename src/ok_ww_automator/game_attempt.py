@@ -30,7 +30,9 @@ def main(argv: list[str] | None = None) -> int:
             project_root=Path(args.project_root),
             env_file=Path(args.env_file),
         )
-        launcher = OkLauncher.from_app_config(app_config, ww_root=Path(args.ww_root))
+        launcher = OkLauncher.from_app_config(
+            app_config, ww_root=Path(args.ww_root), detect_network_dialog=args.mode == "daily",
+        )
         payload = run_operation(args.mode, args.operation, launcher, sheet_config)
         write_payload(output_path, payload)
         return 0

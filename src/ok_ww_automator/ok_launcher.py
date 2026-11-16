@@ -43,6 +43,7 @@ class TaskExecutor(Protocol):
     current_task: Any
 
     def start(self) -> None: ...
+    def ocr_lib(self) -> Any: ...
 
 
 class OkRuntime(Protocol):
@@ -60,6 +61,7 @@ class OkLaunchOptions:
     ready_timeout_seconds: float = 120.0
     ready_poll_seconds: float = 5.0
     game_resource_quality: str = "hd"
+    detect_network_dialog: bool = False
 
 
 @dataclass(frozen=True)
@@ -82,12 +84,15 @@ class OkLauncher:
         self.monotonic = monotonic
 
     @classmethod
-    def from_app_config(cls, app_config: AppConfig, *, ww_root: Path) -> "OkLauncher":
+    def from_app_config(
+        cls, app_config: AppConfig, *, ww_root: Path, detect_network_dialog: bool = False,
+    ) -> "OkLauncher":
         return cls(
             OkLaunchOptions(
                 ww_root=ww_root,
                 game_exe_path=app_config.require_game_exe_path(),
                 game_resource_quality=app_config.game_resource_quality,
+                detect_network_dialog=detect_network_dialog,
             )
         )
 
@@ -137,6 +142,8 @@ class OkLauncher:
             preferred = refresh_and_select_connected_device(ok.device_manager)
             if preferred and preferred.get("connected"):
                 return
+            if self.options.detect_network_dialog and has_startup_network_dialog(ok):
+                raise OkLaunchError("游戏启动时弹出「网络异常，请检查后重试」")
             self.sleep(self.options.ready_poll_seconds)
         raise OkLaunchError(f"Game window was not connected within {self.options.launch_wait_seconds:g} seconds")
 
@@ -154,6 +161,25 @@ class OkLauncher:
                 return
             self.sleep(self.options.ready_poll_seconds)
         raise OkLaunchError(f"OK capture/input or game foreground focus was not ready within {self.options.ready_timeout_seconds:g} seconds")
+
+
+def has_startup_network_dialog(ok: OkRuntime) -> bool:
+    # The dialog can appear before OK has a connected game capture source.
+    # Calling task.ocr() here would wait for the still-paused task executor.
+    try:
+        from PIL import ImageGrab
+        import numpy as np
+
+        desktop = np.asarray(ImageGrab.grab(all_screens=True).convert("RGB"))
+        rows = ok.task_executor.ocr_lib().ocr(desktop[:, :, ::-1].copy())[0] or []
+        texts = {"".join(text.split()) for _, (text, _) in rows}
+    except Exception:
+        logging.getLogger(__name__).debug("Startup network dialog check failed", exc_info=True)
+        return False
+    return (
+        {"退出游戏", "重试"} <= texts
+        and any("网络异常" in text and "请检查后重试" in text for text in texts)
+    )
 
 
 def make_headless_config(config: dict[str, Any]) -> dict[str, Any]:

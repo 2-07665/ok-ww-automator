@@ -3,7 +3,7 @@ import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -278,6 +278,33 @@ class OkLauncherTest(unittest.TestCase):
         )
         self.assertTrue(ok.task_executor.started)
         self.assertNotIn(2, clock.sleeps)
+
+    def test_daily_window_wait_aborts_early_for_network_dialog(self) -> None:
+        clock = Clock()
+        launcher = OkLauncher(
+            OkLaunchOptions(
+                ww_root=Path("/ww"),
+                game_exe_path=Path("/game/Wuthering Waves.exe"),
+                detect_network_dialog=True,
+            ),
+            sleep=clock.sleep,
+            monotonic=clock.monotonic,
+        )
+        executor = Mock()
+        executor.ocr_lib.return_value.ocr.side_effect = [
+            [[(None, ("网络异常，请检查后重试！", 0.97))]],
+            [[(None, (text, 0.97)) for text in ("网络异常，请检查后重试！", "退出游戏", "重试")]],
+        ]
+        ok = FakeOk(FakeDeviceManager(), task_executor=executor)
+        image_grab = Mock()
+        numpy = Mock()
+        numpy.asarray.return_value = MagicMock()
+        with patch.dict(sys.modules, {"PIL": SimpleNamespace(ImageGrab=image_grab), "numpy": numpy}):
+            with self.assertRaisesRegex(OkLaunchError, "网络异常"):
+                launcher.wait_for_game_window(ok)
+        self.assertEqual(clock.sleeps, [5])
+        self.assertEqual(image_grab.grab.call_count, 2)
+        executor.start.assert_not_called()
 
     def test_ensure_game_ready_selects_connected_device_when_saved_preference_is_stale(self) -> None:
         stale = {"imei": "pc", "connected": False}
